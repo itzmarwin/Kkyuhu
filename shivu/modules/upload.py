@@ -30,27 +30,13 @@ async def get_next_sequence_number(sequence_name):
     return sequence_document['sequence_value']
 
 async def check_url(url):
-    """
-    Async URL validator to prevent blocking.
-    Returns (True, None) if reachable, (False, reason) otherwise.
-
-    FIX: pehle HEAD request use hota tha -- kaafi image-hosts (graph.org/telegra.ph
-    samet) HEAD ko GET jaisa reliably handle nahi karte, aur bina User-Agent ke
-    kuch hosts non-browser client ko block/misbehave kar dete hain. Ab GET +
-    browser-like User-Agent use karte hain. Reason bhi return karte hain ab,
-    taaki 'Invalid URL' ke saath asli wajah (404, timeout, etc.) bhi dikh sake.
-    """
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    """Async URL validator to prevent blocking"""
     try:
-        async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                if response.status == 200:
-                    return True, None
-                return False, f'server returned status {response.status}'
-    except asyncio.TimeoutError:
-        return False, 'request timed out'
-    except Exception as e:
-        return False, str(e)
+        async with aiohttp.ClientSession() as session:
+            async with session.head(url, timeout=5) as response:
+                return response.status == 200
+    except:
+        return False
 
 async def upload(update: Update, context: CallbackContext) -> None:
     if str(update.effective_user.id) not in sudo_users:
