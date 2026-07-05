@@ -1,0 +1,10 @@
+python-telegram-bot==20.8
+kurigram>=2.2.17
+pymongo>=4.16.0
+aiohttp
+requests
+python-dotenv
+cachetools
+tgcrypto
+pyrate-limiter==3.1.0
+apscheduler==3.6.3
