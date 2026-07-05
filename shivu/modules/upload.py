@@ -6,7 +6,7 @@ from telegram.ext import CommandHandler, CallbackContext
 
 from shivu import application, sudo_users, collection, db, CHARA_CHANNEL_ID, SUPPORT_CHAT
 # Tumhara Plan: Memory cache import kar rahe hain
-from shivu.__main__ import all_characters_cache
+from shivu.__main__ import all_characters_cache, characters_by_id
 
 WRONG_FORMAT_TEXT = """Wrong ❌️ format...  eg. /upload Img_url muzan-kibutsuji Demon-slayer 3
 
@@ -63,7 +63,9 @@ async def upload(update: Update, context: CallbackContext) -> None:
             await update.message.reply_text('Invalid rarity. Please use 1, 2, 3, 4, or 5.')
             return
 
-        id = str(await get_next_sequence_number('character_id')).zfill(2)
+        # FIX: ab plain integer (pehle str().zfill(2) tha -- 100+ IDs pe same-anime ke andar
+        # sort order todh deta, kyunki "100" string-compare mein "99" se PEHLE aa jaata hai)
+        id = await get_next_sequence_number('character_id')
 
         character = {
             'img_url': args[0],
@@ -83,13 +85,15 @@ async def upload(update: Update, context: CallbackContext) -> None:
             character['message_id'] = message.message_id
             await collection.insert_one(character)
             
-            # Memory cache update
+            # Memory cache update -- dono containers ek hi object ko refer karte hain
             all_characters_cache.append(character)
+            characters_by_id[character['id']] = character
             
             await update.message.reply_text('CHARACTER ADDED....')
         except:
             await collection.insert_one(character)
-            all_characters_cache.append(character) # Memory cache update
+            all_characters_cache.append(character)
+            characters_by_id[character['id']] = character
             await update.effective_message.reply_text("Character Added but no Database Channel Found, Consider adding one.")
         
     except Exception as e:
@@ -106,12 +110,19 @@ async def delete(update: Update, context: CallbackContext) -> None:
             await update.message.reply_text('Incorrect format... Please use: /delete ID')
             return
 
-        character = await collection.find_one_and_delete({'id': args[0]})
+        try:
+            character_id = int(args[0])
+        except ValueError:
+            await update.message.reply_text('ID ek number hona chahiye.')
+            return
+
+        character = await collection.find_one_and_delete({'id': character_id})
 
         if character:
-            # Memory cache se bhi delete karo
-            global all_characters_cache
-            all_characters_cache = [c for c in all_characters_cache if c['id'] != args[0]]
+            # FIX: in-place mutation (rebind nahi karte) -- taaki __main__.py jaisa doosra
+            # module isी list-object ko dekhta rahe, stale/purani copy pe na atke
+            all_characters_cache[:] = [c for c in all_characters_cache if c['id'] != character_id]
+            characters_by_id.pop(character_id, None)
             
             try:
                 await context.bot.delete_message(chat_id=CHARA_CHANNEL_ID, message_id=character['message_id'])
@@ -135,7 +146,13 @@ async def update(update: Update, context: CallbackContext) -> None:
             await update.message.reply_text('Incorrect format. Please use: /update id field new_value')
             return
 
-        character = await collection.find_one({'id': args[0]})
+        try:
+            character_id = int(args[0])
+        except ValueError:
+            await update.message.reply_text('ID ek number hona chahiye.')
+            return
+
+        character = await collection.find_one({'id': character_id})
         if not character:
             await update.message.reply_text('Character not found.')
             return
@@ -157,11 +174,14 @@ async def update(update: Update, context: CallbackContext) -> None:
         else:
             new_value = args[2]
 
-        await collection.find_one_and_update({'id': args[0]}, {'$set': {args[1]: new_value}})
+        await collection.find_one_and_update({'id': character_id}, {'$set': {args[1]: new_value}})
 
-        # Memory cache update
+        # Memory cache update -- all_characters_cache[i] aur characters_by_id[character_id]
+        # dono SAME dict-object ko refer karte hain (load ke waqt ek hi object dono
+        # containers mein gaya tha), isliye sirf yahan mutate karna kaafi hai; characters_by_id
+        # se padhne par ye change turant khud-ba-khud dikhega, alag se sync nahi karna padta.
         for i, c in enumerate(all_characters_cache):
-            if c['id'] == args[0]:
+            if c['id'] == character_id:
                 all_characters_cache[i][args[1]] = new_value
                 break
         
@@ -174,7 +194,7 @@ async def update(update: Update, context: CallbackContext) -> None:
                     caption=f'<b>Character Name:</b> {character["name"]}\n<b>Anime Name:</b> {character["anime"]}\n<b>Rarity:</b> {character["rarity"]}\n<b>ID:</b> {character["id"]}\nUpdated by <a href="tg://user?id={update.effective_user.id}">{update.effective_user.first_name}</a>',
                     parse_mode='HTML'
                 )
-                await collection.find_one_and_update({'id': args[0]}, {'$set': {'message_id': message.message_id}})
+                await collection.find_one_and_update({'id': character_id}, {'$set': {'message_id': message.message_id}})
             except:
                 pass
         else:
