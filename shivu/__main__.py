@@ -48,7 +48,6 @@ async def ensure_indexes():
     LOGGER.info("Indexes ensured.")
 
 async def load_characters_into_memory():
-    """Fetch all characters (startup pe, aur upload/delete/update ke baad re-sync ke liye reusable)"""
     LOGGER.info("Loading all characters into memory...")
     fresh_data = await collection.find({}).to_list(length=None)
 
