@@ -50,9 +50,8 @@ async def upload(update: Update, context: CallbackContext) -> None:
         character_name = args[1].replace('-', ' ').title()
         anime = args[2].replace('-', ' ').title()
 
-        is_valid_url, invalid_reason = await check_url(args[0])
-        if not is_valid_url:
-            await update.message.reply_text(f'Invalid URL. ({invalid_reason})')
+        if not await check_url(args[0]):
+            await update.message.reply_text('Invalid URL.')
             return
 
         rarity_map = {1: "⚪ Common", 2: "🟣 Rare", 3: "🟡 Legendary", 4: "🟢 Medium", 5: "💮 Special edition"}
