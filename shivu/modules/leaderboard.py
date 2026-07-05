@@ -72,14 +72,17 @@ async def ctop(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text(leaderboard_message, parse_mode='HTML')
 
 async def leaderboard(update: Update, context: CallbackContext) -> None:
-    # OPTIMIZATION: Match only users who have at least 1 character to speed up aggregation
-    # FIX: await lagaya gaya hai
-    cursor = await user_collection.aggregate([
-        {"$match": {"characters.0": {"$exists": True}}},
-        {"$project": {"username": 1, "first_name": 1, "character_count": {"$size": "$characters"}}},
-        {"$sort": {"character_count": -1}},
-        {"$limit": 10}
-    ])
+    # FIX: pehle har baar poore characters array ka $size compute karke, in-memory sort
+    # karta tha (koi index use nahi ho sakta computed field pe -- users badhne pe slow,
+    # aur M0/shared Atlas tier allowDiskUse support hi nahi karta to bade dataset pe
+    # error bhi de sakta tha). Ab character_count ek PRECOMPUTED field hai (guess()/
+    # trade()/gift() ise maintain karte hain __main__.py mein), isliye seedha
+    # find+sort+limit -- bilkul ctop/topgroups jaisa, index bhi use hoga.
+    cursor = user_collection.find(
+        {'character_count': {'$gt': 0}},
+        {'username': 1, 'first_name': 1, 'character_count': 1, '_id': 0}
+    ).sort('character_count', -1).limit(10)
+
     leaderboard_data = await cursor.to_list(length=10)
 
     leaderboard_message = "<b>TOP 10 USERS WITH MOST CHARACTERS</b>\n\n"
@@ -91,7 +94,7 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
         if len(first_name) > 15:
             first_name = first_name[:15] + '...'
             
-        character_count = user['character_count']
+        character_count = user.get('character_count', 0)
         
         if username:
             leaderboard_message += f'{i}. <a href="https://t.me/{username}"><b>{first_name}</b></a> ➾ <b>{character_count}</b>\n'
