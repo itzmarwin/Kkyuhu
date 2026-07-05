@@ -2,18 +2,59 @@ import re
 import time
 from html import escape
 from collections import Counter
-from pymongo import ASCENDING
 
 from telegram import Update, InlineQueryResultPhoto
 from telegram.ext import InlineQueryHandler, CallbackContext
 
 from shivu import user_collection, collection, application, db
+from shivu.__main__ import characters_by_id
 
-# Synchronous index creation
-db.characters.create_index([('id', ASCENDING)])
-db.characters.create_index([('anime', ASCENDING)])
-db.user_collection.create_index([('characters.id', ASCENDING)])
-db.user_collection.create_index([('characters.name', ASCENDING)])
+# NOTE: index creation ab yahan nahi hai -- move kar diya shivu/__main__.py ke
+# ensure_indexes() mein. Wajah: create_index() khud ek async/awaitable operation hai
+# (PyMongo ke naye async client mein), aur module-level bina await ke ye pehle sirf
+# ek coroutine object banata tha jo kabhi chalta hi nahi tha -- index kabhi banta hi
+# nahi tha (collection sahi ho ya galat, dono soorat mein). __main__.py mein proper
+# async context (startup ke waqt) mein ab sahi se await ho raha hai.
+
+
+async def get_global_guess_counts(char_ids):
+    """
+    Diye gaye character_ids ke liye, saare users milaake total kitni baar guess/grab
+    hua hai (duplicates samet) -- {char_id: total_count}.
+
+    NOTE: naye {id,count} schema mein ek array-element khud kai copies represent kar
+    sakta hai, isliye elements COUNT nahi karte ($sum: 1), balki unka count FIELD
+    SUM karte hain ($sum: '$matched.count'). Warna trade/gift ke baad (jo copies users
+    ke beech move karta hai, total nahi ghataता) ye number galat-kam dikhta.
+    Filter-then-unwind bhi use kiya hai (unwind-then-filter ki jagah) -- warna heavy
+    collectors ka POORA array unwind hota sirf 1-2 matching characters count karne ke liye.
+    """
+    if not char_ids:
+        return {}
+    cursor = await user_collection.aggregate([
+        {"$match": {"characters.id": {"$in": char_ids}}},
+        {"$project": {"matched": {"$filter": {
+            "input": "$characters",
+            "cond": {"$in": ["$$this.id", char_ids]}
+        }}}},
+        {"$unwind": "$matched"},
+        {"$group": {"_id": "$matched.id", "count": {"$sum": "$matched.count"}}}
+    ])
+    result_list = await cursor.to_list(length=None)
+    return {item['_id']: item['count'] for item in result_list}
+
+
+async def get_anime_totals(anime_names):
+    """Diye gaye anime names ke liye catalog mein kitne total unique characters hain."""
+    if not anime_names:
+        return {}
+    cursor = await collection.aggregate([
+        {"$match": {"anime": {"$in": anime_names}}},
+        {"$group": {"_id": "$anime", "count": {"$sum": 1}}}
+    ])
+    result_list = await cursor.to_list(length=None)
+    return {item['_id']: item['count'] for item in result_list}
+
 
 async def inlinequery(update: Update, context: CallbackContext) -> None:
     query = update.inline_query.query
@@ -38,43 +79,42 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
             await update.inline_query.answer([], cache_time=5)
             return
 
-        all_characters = user['characters']
+        # Naye {id,count} schema -- naam/anime/rarity/img_url characters_by_id (master
+        # catalog cache) se join karte hain, jaisa harem.py mein bhi kiya. Ye pehle se
+        # hi unique hai (ek entry per character), purana dedup-by-id block ab zarurat nahi.
+        owned_characters = []
+        char_count_map = {}
+        for entry in user['characters']:
+            info = characters_by_id.get(entry['id'])
+            if info is None:
+                continue
+            owned_characters.append({
+                'id': entry['id'],
+                'name': info['name'],
+                'anime': info['anime'],
+                'rarity': info.get('rarity'),
+                'img_url': info.get('img_url'),
+            })
+            char_count_map[entry['id']] = entry['count']
+
         if search_terms:
             regex = re.compile(' '.join(search_terms), re.IGNORECASE)
-            all_characters = [c for c in all_characters if regex.search(c.get('name', '')) or regex.search(c.get('anime', ''))]
-        else:
-            all_characters = list({v['id']:v for v in all_characters}.values())
+            owned_characters = [c for c in owned_characters if regex.search(c['name']) or regex.search(c['anime'])]
 
-        characters = all_characters[offset:offset+limit]
-        total_count = len(all_characters)
-        
-        user_char_ids = [c['id'] for c in user['characters']]
-        user_anime_names = [c['anime'] for c in user['characters']]
-        
-        char_count_map = Counter(user_char_ids)
-        anime_count_map = Counter(user_anime_names)
-        
+        owned_characters.sort(key=lambda c: c['id'])
+
+        characters = owned_characters[offset:offset+limit]
+
+        # Personal anime-ownership: UNIQUE characters count (duplicates nahi gine), harem.py
+        # ke X/Y jaisa hi -- warna ratio 1 se zyada dikh sakta tha agar kisi character
+        # ki kai copies ho
+        anime_count_map = Counter(c['anime'] for c in owned_characters)
+
         char_ids = [c['id'] for c in characters]
-        
-        # FIX: await lagaya gaya hai
-        global_counts_cursor = await user_collection.aggregate([
-            {"$match": {"characters.id": {"$in": char_ids}}},
-            {"$project": {"_id": 0, "characters.id": 1}},
-            {"$unwind": "$characters"},
-            {"$match": {"characters.id": {"$in": char_ids}}},
-            {"$group": {"_id": "$characters.id", "count": {"$sum": 1}}}
-        ])
-        global_counts_list = await global_counts_cursor.to_list(length=None)
-        global_counts = {item['_id']: item['count'] for item in global_counts_list}
-        
+        global_counts = await get_global_guess_counts(char_ids)
+
         anime_names = list(set(c['anime'] for c in characters))
-        # FIX: await lagaya gaya hai
-        anime_counts_cursor = await collection.aggregate([
-            {"$match": {"anime": {"$in": anime_names}}},
-            {"$group": {"_id": "$anime", "count": {"$sum": 1}}}
-        ])
-        anime_counts_list = await anime_counts_cursor.to_list(length=None)
-        anime_counts = {item['_id']: item['count'] for item in anime_counts_list}
+        anime_counts = await get_anime_totals(anime_names)
 
     else:
         # Global Search
@@ -84,42 +124,19 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
         else:
             db_query = {}
 
-        cursor = collection.find(db_query).skip(offset).limit(limit)
+        # FIX: explicit sort add kiya -- warna page-to-page order guaranteed nahi tha
+        cursor = collection.find(db_query).sort('id', 1).skip(offset).limit(limit)
         characters = await cursor.to_list(length=limit)
-        
-        total_count = await collection.count_documents(db_query)
-        
+
         char_ids = [c['id'] for c in characters]
-        if char_ids:
-            # FIX: await lagaya gaya hai
-            global_counts_cursor = await user_collection.aggregate([
-                {"$match": {"characters.id": {"$in": char_ids}}},
-                {"$project": {"_id": 0, "characters.id": 1}},
-                {"$unwind": "$characters"},
-                {"$match": {"characters.id": {"$in": char_ids}}},
-                {"$group": {"_id": "$characters.id", "count": {"$sum": 1}}}
-            ])
-            global_counts_list = await global_counts_cursor.to_list(length=None)
-            global_counts = {item['_id']: item['count'] for item in global_counts_list}
-        else:
-            global_counts = {}
+        global_counts = await get_global_guess_counts(char_ids)
 
         anime_names = list(set(c['anime'] for c in characters))
-        if anime_names:
-            # FIX: await lagaya gaya hai
-            anime_counts_cursor = await collection.aggregate([
-                {"$match": {"anime": {"$in": anime_names}}},
-                {"$group": {"_id": "$anime", "count": {"$sum": 1}}}
-            ])
-            anime_counts_list = await anime_counts_cursor.to_list(length=None)
-            anime_counts = {item['_id']: item['count'] for item in anime_counts_list}
-        else:
-            anime_counts = {}
+        anime_counts = await get_anime_totals(anime_names)
 
-    if offset + limit < total_count:
-        next_offset = str(offset + limit)
-    else:
-        next_offset = ""
+    # FIX: count_documents (poori collection count -- expensive) hataya. Simple heuristic:
+    # agar is page mein poora limit mila, maano aur hain; kam mila to ye aakhri page hai.
+    next_offset = str(offset + limit) if len(characters) == limit else ""
 
     results = []
     for character in characters:
