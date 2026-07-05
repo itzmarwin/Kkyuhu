@@ -37,7 +37,6 @@ async def trade(client, message):
         await message.reply_text("Character IDs must be numbers!")
         return
 
-    # OPTIMIZATION: Sirf existence check karo, poora array mat lo
     sender_char_doc = await user_collection.find_one(
         {'id': sender_id, 'characters.id': sender_character_id},
         {'characters.$': 1}
@@ -54,8 +53,6 @@ async def trade(client, message):
         await message.reply_text("The other user doesn't have the character they are trying to trade!")
         return
 
-    # Naye {id,count} schema mein poore character-object ki zarurat nahi -- bas dono IDs
-    # yaad rakho, confirm ke waqt existence dobara check hoga
     pending_trades[(sender_id, receiver_id)] = (sender_character_id, receiver_character_id)
 
     keyboard = InlineKeyboardMarkup(
@@ -87,8 +84,6 @@ async def on_trade_callback(client, callback_query):
     if callback_query.data == "confirm_trade":
         sender_character_id, receiver_character_id = trade_info
 
-        # Double check dono ke paas abhi bhi hai (beech mein gift/trade kar diya ho sakta hai)
-        # -- dono independent documents hain, parallel check karte hain
         sender_check, receiver_check = await asyncio.gather(
             user_collection.count_documents({'id': sender_id, 'characters.id': sender_character_id}),
             user_collection.count_documents({'id': receiver_id, 'characters.id': receiver_character_id}),
@@ -99,10 +94,6 @@ async def on_trade_callback(client, callback_query):
             await callback_query.message.edit_text("❌ Trade failed! Someone no longer has the character.")
             return
 
-        # Naye schema pe atomic $inc/$pull/$push -- na poora-array overwrite (race-condition
-        # risk khatam), na duplicate-copies wipe hone ka risk (purane full-object $pull wale
-        # schema mein agar kisi character ki 2+ copies hoti to $pull SAARI hata deta; ab
-        # count-based hone se sirf 1 copy hi move hoti hai, jaisa hona chahiye)
         await asyncio.gather(
             remove_character_from_user(sender_id, sender_character_id),
             remove_character_from_user(receiver_id, receiver_character_id),
@@ -112,7 +103,6 @@ async def on_trade_callback(client, callback_query):
 
         del pending_trades[(sender_id, receiver_id)]
         
-        # Edit message text directly without relying on reply_to_message
         await callback_query.message.edit_text(f"✅ Trade successful! {callback_query.from_user.mention} and the other user have exchanged characters.")
 
     elif callback_query.data == "cancel_trade":
@@ -152,7 +142,6 @@ async def gift(client, message):
         await message.reply_text("Character ID must be a number!")
         return
 
-    # Fetch only the specific character instead of the whole array
     char_doc = await user_collection.find_one(
         {'id': sender_id, 'characters.id': character_id},
         {'characters.$': 1}
@@ -197,14 +186,12 @@ async def on_gift_callback(client, callback_query):
     if callback_query.data == "confirm_gift":
         character_id = gift_info['character_id']
 
-        # Verify sender still has it
         sender_check = await user_collection.count_documents({'id': sender_id, 'characters.id': character_id})
         if not sender_check:
             del pending_gifts[(sender_id, receiver_id)]
             await callback_query.message.edit_text("❌ Gift failed! You no longer have this character.")
             return
 
-        # Naye schema pe: dono independent documents hain, parallel chalao
         await asyncio.gather(
             remove_character_from_user(sender_id, character_id),
             grant_character_to_user(
