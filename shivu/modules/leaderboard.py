@@ -12,7 +12,6 @@ from shivu import (application, PHOTO_URL, OWNER_ID,
 from shivu import sudo_users as SUDO_USERS 
 
 async def global_leaderboard(update: Update, context: CallbackContext) -> None:
-    # OPTIMIZATION: Direct find and sort instead of aggregate for faster execution
     cursor = top_global_groups_collection.find(
         {}, 
         {'group_name': 1, 'count': 1, '_id': 0}
@@ -25,14 +24,12 @@ async def global_leaderboard(update: Update, context: CallbackContext) -> None:
     for i, group in enumerate(leaderboard_data, start=1):
         group_name = html.escape(group.get('group_name', 'Unknown'))
 
-        # Bug Fix: Agar naam 15 se lamba hai tohi truncate karo
         if len(group_name) > 15:
             group_name = group_name[:15] + '...'
             
         count = group.get('count', 0)
         leaderboard_message += f'{i}. <b>{group_name}</b> ➾ <b>{count}</b>\n'
     
-    # Photo URL check to prevent crash
     photo_url = random.choice(PHOTO_URL) if PHOTO_URL else None
     if photo_url:
         await update.message.reply_photo(photo=photo_url, caption=leaderboard_message, parse_mode='HTML')
@@ -72,12 +69,6 @@ async def ctop(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text(leaderboard_message, parse_mode='HTML')
 
 async def leaderboard(update: Update, context: CallbackContext) -> None:
-    # FIX: pehle har baar poore characters array ka $size compute karke, in-memory sort
-    # karta tha (koi index use nahi ho sakta computed field pe -- users badhne pe slow,
-    # aur M0/shared Atlas tier allowDiskUse support hi nahi karta to bade dataset pe
-    # error bhi de sakta tha). Ab character_count ek PRECOMPUTED field hai (guess()/
-    # trade()/gift() ise maintain karte hain __main__.py mein), isliye seedha
-    # find+sort+limit -- bilkul ctop/topgroups jaisa, index bhi use hoga.
     cursor = user_collection.find(
         {'character_count': {'$gt': 0}},
         {'username': 1, 'first_name': 1, 'character_count': 1, '_id': 0}
@@ -112,7 +103,6 @@ async def stats(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text("You are not authorized to use this command.")
         return
 
-    # OPTIMIZATION: Use estimated_document_count for instant results
     user_count = await user_collection.estimated_document_count()
     group_count = await top_global_groups_collection.estimated_document_count()
 
@@ -123,7 +113,6 @@ async def send_users_document(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text('only For Sudo users...')
         return
         
-    # OPTIMIZATION: Stream data directly to file to prevent RAM crash (OOM Kill)
     filename = 'users.txt'
     with open(filename, 'w', encoding='utf-8') as f:
         async for user in user_collection.find({}, {'first_name': 1}):
