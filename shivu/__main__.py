@@ -14,11 +14,11 @@ from shivu import collection, top_global_groups_collection, group_user_totals_co
 from shivu import application, SUPPORT_CHAT, UPDATE_CHAT, db, LOGGER
 from shivu.modules import ALL_MODULES
 
-# --- GLOBAL CACHES (Tumhara Plan) ---
-all_characters_cache = []   # Stores all characters in memory
-characters_by_id = {}       # id -> full character dict, O(1) lookup.
-group_freq_cache = {}       # Stores drop frequency per group
-# -----------------------------------
+
+all_characters_cache = []   
+characters_by_id = {}       
+group_freq_cache = {}       
+
 
 locks = {}
 message_counts = {}
@@ -29,9 +29,6 @@ first_correct_guesses = {}
 last_user = {}
 warned_users = {}
 
-# NOTE: ye weights naam dekh kar guess kiye hain (Common sabse zyada milega, Special edition
-# sabse kam). upload.py ke rarity_map (1-5) ki numbering rank-order nahi darshati (Legendary=3
-# hai Medium=4 se pehle), isliye rank order khud decide kiya hai -- confirm/adjust kar lena.
 RARITY_WEIGHTS = {
     "⚪ Common": 100,
     "🟢 Medium": 50,
@@ -40,28 +37,9 @@ RARITY_WEIGHTS = {
     "💮 Special edition": 3,
 }
 
-# ============================================================================
-# IMPORTANT: neeche jo bhi function/variable define ho rahe hain, wo saare
-# "for module_name in ALL_MODULES:" LOOP SE PEHLE hone chahiye.
-#
-# Wajah: wo loop trade.py/harem.py/upload.py/inlinequery.py jaise saare modules
-# ko import karta hai, aur wo modules `from shivu.__main__ import <naam>` karte
-# hain. Jab tak __main__.py khud us loop ke andar atka hai, loop ke NEECHE ki
-# koi bhi cheez abhi tak define nahi hui hoti -- to koi bhi module usko import
-# karne ki koshish kare to "partially initialized module" ImportError aayega
-# (isی se abhi crash hua tha: grant_character_to_user/remove_character_from_user
-# loop ke neeche the).
-#
-# Rule: koi bhi naya function/variable jo tum kisी module se import karwana
-# chahte ho, use HAMESHA is comment se UPAR (loop se pehle) rakhna.
-# ============================================================================
+
 
 async def ensure_indexes():
-    """
-    Saare zaroori indexes yahan ek jagah, startup pe ek baar banate hain.
-    create_index() khud ek coroutine hai PyMongo ke async client mein
-    (find_one/update_one jaisa), isliye await zaroori hai.
-    """
     await collection.create_index([('id', ASCENDING)])
     await collection.create_index([('anime', ASCENDING)])
     await user_collection.create_index([('id', ASCENDING)])
@@ -83,16 +61,6 @@ async def load_characters_into_memory():
     LOGGER.info(f"Loaded {len(all_characters_cache)} characters into memory!")
 
 async def grant_character_to_user(user_id: int, character_id: int, username=None, first_name=None) -> None:
-    """
-    User ko character 'de do': pehle se 1+ copy hai to sirf count +1, warna naya
-    {id, count: 1} entry push karo. character_count (leaderboard ke liye) bhi
-    saath mein maintain karta hai. guess() abhi ise use karta hai; trade.py/gift.py
-    bhi isi ko reuse karte hain.
-
-    username/first_name OPTIONAL hain: guess() jaisa live-update context ho to pass karo,
-    trade.py jaisa context ho jahan doosre party ka fresh naam haath mein nahi hota,
-    to None chhod do -- warna unki existing username/first_name galti se null ho jaati.
-    """
     inc_fields = {'characters.$.count': 1, 'character_count': 1}
     set_fields = {}
     if username is not None:
@@ -122,11 +90,6 @@ async def grant_character_to_user(user_id: int, character_id: int, username=None
         )
 
 async def remove_character_from_user(user_id: int, character_id: int) -> None:
-    """
-    User se character ki 1 copy hatao: count -1, aur count 0 pe pahunch jaaye to poora
-    {id,count} entry hata do. character_count bhi -1. trade.py/gift.py (sender side)
-    yahan se import karke use karte hain.
-    """
     await user_collection.update_one(
         {'id': user_id, 'characters.id': character_id},
         {'$inc': {'characters.$.count': -1, 'character_count': -1}},
@@ -140,10 +103,8 @@ def escape_markdown(text):
     escape_chars = r'\*_`\\~>#+-=|{}.!'
     return re.sub(r'([%s])' % re.escape(escape_chars), r'\\\1', text)
 
-# ============================================================================
-# Yahan se neeche saare modules load hote hain -- is line se upar ki har cheez
-# ab available hai kisi bhi module ke liye
-# ============================================================================
+
+
 for module_name in ALL_MODULES:
     imported_module = importlib.import_module("shivu.modules." + module_name)
 
@@ -161,14 +122,13 @@ async def message_counter(update: Update, context: CallbackContext) -> None:
     should_send = False
 
     async with lock:
-        # Spam protection
         if chat_id in last_user and last_user[chat_id]['user_id'] == user_id:
             last_user[chat_id]['count'] += 1
             if last_user[chat_id]['count'] >= 10:
                 if user_id in warned_users and time.time() - warned_users[user_id] < 600:
                     return
                 else:
-                    await update.message.reply_text(f"⚠️ Don't Spam {update.effective_user.first_name}...\nYour Messages Will be ignored for 10 Minutes...")
+                    await update.message.reply_text(f"Don't Spam {update.effective_user.first_name}...\nYour Messages Will be ignored for 10 Minutes...")
                     warned_users[user_id] = time.time()
                     return
         else:
