@@ -1,8 +1,8 @@
 import logging
 import os
-from pyrogram import Client  # Kurigram drop-in replacement (Import pyrogram hi hoga)
+from pyrogram import Client  
 from telegram.ext import Application, AIORateLimiter
-from pymongo import AsyncMongoClient  # Line 5 Fix: Motor replaced with PyMongo Async
+from pymongo import AsyncMongoClient  
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -39,10 +39,8 @@ application = (
     .build()
 )
 
-# Pyrogram Client (Running via Kurigram)
 shivuu = Client("Shivu", api_id, api_hash, bot_token=TOKEN)
 
-# PyMongo Async Client (Motor ki jagah)
 lol = AsyncMongoClient(mongo_url)
 db = lol['Character_catcher']
 collection = db['anime_characters_lol']
