@@ -16,8 +16,7 @@ from shivu.modules import ALL_MODULES
 
 # --- GLOBAL CACHES (Tumhara Plan) ---
 all_characters_cache = []   # Stores all characters in memory
-characters_by_id = {}       # id -> full character dict, O(1) lookup. Abhi is file mein use
-                             # nahi hota, harem.py/inlinequery.py isko import karenge.
+characters_by_id = {}       # id -> full character dict, O(1) lookup.
 group_freq_cache = {}       # Stores drop frequency per group
 # -----------------------------------
 
@@ -41,23 +40,27 @@ RARITY_WEIGHTS = {
     "💮 Special edition": 3,
 }
 
-for module_name in ALL_MODULES:
-    imported_module = importlib.import_module("shivu.modules." + module_name)
-
-def escape_markdown(text):
-    escape_chars = r'\*_`\\~>#+-=|{}.!'
-    return re.sub(r'([%s])' % re.escape(escape_chars), r'\\\1', text)
+# ============================================================================
+# IMPORTANT: neeche jo bhi function/variable define ho rahe hain, wo saare
+# "for module_name in ALL_MODULES:" LOOP SE PEHLE hone chahiye.
+#
+# Wajah: wo loop trade.py/harem.py/upload.py/inlinequery.py jaise saare modules
+# ko import karta hai, aur wo modules `from shivu.__main__ import <naam>` karte
+# hain. Jab tak __main__.py khud us loop ke andar atka hai, loop ke NEECHE ki
+# koi bhi cheez abhi tak define nahi hui hoti -- to koi bhi module usko import
+# karne ki koshish kare to "partially initialized module" ImportError aayega
+# (isی se abhi crash hua tha: grant_character_to_user/remove_character_from_user
+# loop ke neeche the).
+#
+# Rule: koi bhi naya function/variable jo tum kisी module se import karwana
+# chahte ho, use HAMESHA is comment se UPAR (loop se pehle) rakhna.
+# ============================================================================
 
 async def ensure_indexes():
     """
     Saare zaroori indexes yahan ek jagah, startup pe ek baar banate hain.
-
-    FIX: inlinequery.py mein pehle ye calls the (module-level, bina await ke) --
-    lekin PyMongo ke naye async client mein create_index() khud ek COROUTINE hai
-    (find_one/update_one/aggregate jaisa hi), matlab bina await ke wo call sirf ek
-    coroutine object banata hai jo kabhi chalta hi nahi -- index kabhi bana hi nahi
-    (chahe collection sahi ho ya galat). Isliye ab proper async context mein, yahan
-    par await ke saath.
+    create_index() khud ek coroutine hai PyMongo ke async client mein
+    (find_one/update_one jaisa), isliye await zaroori hai.
     """
     await collection.create_index([('id', ASCENDING)])
     await collection.create_index([('anime', ASCENDING)])
@@ -71,9 +74,6 @@ async def load_characters_into_memory():
     LOGGER.info("Loading all characters into memory...")
     fresh_data = await collection.find({}).to_list(length=None)
 
-    # FIX: rebind (all_characters_cache = ...) ki jagah in-place mutate. Rebind karne se
-    # upload.py jaisa module jo isse import kar chuka hai, PURANE (stale) list-object par
-    # atka reh jaata -- naye /upload live drop nahi hote the jab tak bot restart na ho.
     all_characters_cache.clear()
     all_characters_cache.extend(fresh_data)
 
@@ -89,10 +89,9 @@ async def grant_character_to_user(user_id: int, character_id: int, username=None
     saath mein maintain karta hai. guess() abhi ise use karta hai; trade.py/gift.py
     bhi isi ko reuse karte hain.
 
-    username/first_name OPTIONAL hain: guess() jaisa live-update context ho to pass karo
-    (fresh info $set ho jaayegi), trade.py jaisa context ho jahan doosre party ka fresh
-    naam haath mein nahi hota, to None chhod do -- warna unki existing username/first_name
-    galti se null ho jaati.
+    username/first_name OPTIONAL hain: guess() jaisa live-update context ho to pass karo,
+    trade.py jaisa context ho jahan doosre party ka fresh naam haath mein nahi hota,
+    to None chhod do -- warna unki existing username/first_name galti se null ho jaati.
     """
     inc_fields = {'characters.$.count': 1, 'character_count': 1}
     set_fields = {}
@@ -110,7 +109,6 @@ async def grant_character_to_user(user_id: int, character_id: int, username=None
         update_doc,
     )
     if result.matched_count == 0:
-        # is user ke liye pehli baar (ya document hi nahi tha) -- naya entry push karo
         push_doc = {
             '$push': {'characters': {'id': character_id, 'count': 1}},
             '$inc': {'character_count': 1},
@@ -127,8 +125,7 @@ async def remove_character_from_user(user_id: int, character_id: int) -> None:
     """
     User se character ki 1 copy hatao: count -1, aur count 0 pe pahunch jaaye to poora
     {id,count} entry hata do. character_count bhi -1. trade.py/gift.py (sender side)
-    yahan se import karke use karte hain -- calling code pehle confirm kar chuka hona
-    chahiye ki user ke paas ye character hai.
+    yahan se import karke use karte hain.
     """
     await user_collection.update_one(
         {'id': user_id, 'characters.id': character_id},
@@ -138,6 +135,17 @@ async def remove_character_from_user(user_id: int, character_id: int) -> None:
         {'id': user_id},
         {'$pull': {'characters': {'id': character_id, 'count': {'$lte': 0}}}},
     )
+
+def escape_markdown(text):
+    escape_chars = r'\*_`\\~>#+-=|{}.!'
+    return re.sub(r'([%s])' % re.escape(escape_chars), r'\\\1', text)
+
+# ============================================================================
+# Yahan se neeche saare modules load hote hain -- is line se upar ki har cheez
+# ab available hai kisi bhi module ke liye
+# ============================================================================
+for module_name in ALL_MODULES:
+    imported_module = importlib.import_module("shivu.modules." + module_name)
 
 async def message_counter(update: Update, context: CallbackContext) -> None:
     chat_id = str(update.effective_chat.id)
@@ -166,31 +174,22 @@ async def message_counter(update: Update, context: CallbackContext) -> None:
         else:
             last_user[chat_id] = {'user_id': user_id, 'count': 1}
 
-        # Agar group memory me nahi hai, toh default 0 se shuru karo
         if chat_id not in message_counts:
             message_counts[chat_id] = 0
 
-        # Agar group ki frequency memory me nahi hai, toh DB se laao
         if chat_id not in group_freq_cache:
             chat_frequency = await user_totals_collection.find_one({'chat_id': chat_id})
             freq = chat_frequency.get('message_frequency', 100) if chat_frequency else 100
             group_freq_cache[chat_id] = freq
 
-        # Current cycle ki frequency (Beech me change hone par bhi purani wahi chalegi)
         current_cycle_freq = group_freq_cache[chat_id]
 
         message_counts[chat_id] += 1
 
-        # Jab count current frequency tak pahuchega, tab flag lagao (bhejna lock ke bahar hoga)
         if message_counts[chat_id] >= current_cycle_freq:
-            message_counts[chat_id] = 0  # Cycle reset
+            message_counts[chat_id] = 0
             should_send = True
-            # NOTE: pehle yahan DB se group_freq_cache dobara fetch hota tha cycle-reset pe --
-            # hataya, kyunki changetime.py admin ke /changetime chalate hi cache turant update
-            # kar deta hai, ye re-fetch hamesha ek redundant extra DB round-trip tha.
 
-    # send_image (Telegram photo-send + cache scan) jaan-boojh kar lock ke BAHAR -- taaki isi
-    # chat ke doosre messages photo-send poora hone tak block na hon
     if should_send:
         await send_image(update, context)
 
@@ -202,20 +201,17 @@ async def send_image(update: Update, context: CallbackContext) -> None:
         return
 
     if chat_id not in sent_characters:
-        sent_characters[chat_id] = {}   # dict as ordered-set: id -> True (O(1) 'in' check)
+        sent_characters[chat_id] = {}
 
     available_chars = [c for c in all_characters_cache if c['id'] not in sent_characters[chat_id]]
 
-    # Agar sab characters already sent ho chuke hain, toh list reset karo
     if not available_chars:
         sent_characters[chat_id] = {}
         available_chars = all_characters_cache
 
-    # Rarity-weighted pick -- pehle uniform random.choice tha, ab rarer characters kam milenge
     weights = [RARITY_WEIGHTS.get(c['rarity'], 1) for c in available_chars]
     character = random.choices(available_chars, weights=weights, k=1)[0]
 
-    # Dict ko chota rakho taaki RAM leak na ho (last 20 rakhte hain, jaisa pehle tha)
     if len(sent_characters[chat_id]) > 50:
         sent_characters[chat_id] = dict(list(sent_characters[chat_id].items())[-20:])
 
@@ -255,8 +251,6 @@ async def guess(update: Update, context: CallbackContext) -> None:
 
         character = last_characters[chat_id]
 
-        # Teeno collections independent hain -- parallel chalao. Pehle 6-9 sequential
-        # round-trips the (find + set + push, teen collections ke liye); ab 3 parallel calls.
         user_update = grant_character_to_user(
             user_id, character['id'],
             update.effective_user.username, update.effective_user.first_name,
@@ -318,7 +312,6 @@ async def fav(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text('You have not Guessed any characters yet....')
         return
 
-    # OPTIMIZATION: Check without iterating whole array if possible
     if not any(c['id'] == character_id for c in user.get('characters', [])):
         await update.message.reply_text('This Character is Not In your collection')
         return
@@ -327,7 +320,6 @@ async def fav(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text(f'Character added to your favorite...')
 
 def main() -> None:
-    # Bot start hone pe characters load karo + indexes ensure karo
     loop = asyncio.get_event_loop()
     loop.run_until_complete(load_characters_into_memory())
     loop.run_until_complete(ensure_indexes())
