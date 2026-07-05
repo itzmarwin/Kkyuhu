@@ -1,14 +1,11 @@
 import os
 from dotenv import load_dotenv
 
-# .env file se variables load karo
 load_dotenv()
 
 class Config(object):
     LOGGER = True
 
-    # Get this value from my.telegram.org/apps
-    # Agar .env me value nahi hai, toh default (tumhara purana) value use karega
     OWNER_ID = int(os.getenv("OWNER_ID", "6765826972"))
     sudo_users = tuple(os.getenv("SUDO_USERS", "6845325416,6765826972").split(','))
     GROUP_ID = int(os.getenv("GROUP_ID", "-1002133191051"))
