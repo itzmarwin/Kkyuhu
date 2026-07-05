@@ -1,7 +1,10 @@
+import asyncio
+
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from shivu import user_collection, shivuu
+from shivu.__main__ import grant_character_to_user, remove_character_from_user
 
 pending_trades = {}
 
@@ -27,9 +30,14 @@ async def trade(client, message):
         await message.reply_text("You need to provide two character IDs! /trade your_id their_id")
         return
 
-    sender_character_id, receiver_character_id = message.command[1], message.command[2]
+    try:
+        sender_character_id = int(message.command[1])
+        receiver_character_id = int(message.command[2])
+    except ValueError:
+        await message.reply_text("Character IDs must be numbers!")
+        return
 
-    # OPTIMIZATION: Sirf wahi character fetch karo jo trade hone wala hai, poora array mat lo
+    # OPTIMIZATION: Sirf existence check karo, poora array mat lo
     sender_char_doc = await user_collection.find_one(
         {'id': sender_id, 'characters.id': sender_character_id},
         {'characters.$': 1}
@@ -46,11 +54,9 @@ async def trade(client, message):
         await message.reply_text("The other user doesn't have the character they are trying to trade!")
         return
 
-    # Store actual character objects to avoid DB calls later on confirm
-    sender_character = sender_char_doc['characters'][0]
-    receiver_character = receiver_char_doc['characters'][0]
-
-    pending_trades[(sender_id, receiver_id)] = (sender_character, receiver_character)
+    # Naye {id,count} schema mein poore character-object ki zarurat nahi -- bas dono IDs
+    # yaad rakho, confirm ke waqt existence dobara check hoga
+    pending_trades[(sender_id, receiver_id)] = (sender_character_id, receiver_character_id)
 
     keyboard = InlineKeyboardMarkup(
         [
@@ -79,34 +85,29 @@ async def on_trade_callback(client, callback_query):
         return
 
     if callback_query.data == "confirm_trade":
-        sender_character, receiver_character = trade_info
+        sender_character_id, receiver_character_id = trade_info
 
-        # Double check if both still have the characters (in case they traded/gifted away meanwhile)
-        sender_check = await user_collection.count_documents({'id': sender_id, 'characters.id': sender_character['id']})
-        receiver_check = await user_collection.count_documents({'id': receiver_id, 'characters.id': receiver_character['id']})
+        # Double check dono ke paas abhi bhi hai (beech mein gift/trade kar diya ho sakta hai)
+        # -- dono independent documents hain, parallel check karte hain
+        sender_check, receiver_check = await asyncio.gather(
+            user_collection.count_documents({'id': sender_id, 'characters.id': sender_character_id}),
+            user_collection.count_documents({'id': receiver_id, 'characters.id': receiver_character_id}),
+        )
 
         if not sender_check or not receiver_check:
             del pending_trades[(sender_id, receiver_id)]
             await callback_query.message.edit_text("❌ Trade failed! Someone no longer has the character.")
             return
 
-        # ATOMIC OPERATIONS: $pull to remove, $push to add. No array overwriting!
-        await user_collection.update_one(
-            {'id': sender_id},
-            {'$pull': {'characters': {'id': sender_character['id']}}}
-        )
-        await user_collection.update_one(
-            {'id': receiver_id},
-            {'$pull': {'characters': {'id': receiver_character['id']}}}
-        )
-
-        await user_collection.update_one(
-            {'id': sender_id},
-            {'$push': {'characters': receiver_character}}
-        )
-        await user_collection.update_one(
-            {'id': receiver_id},
-            {'$push': {'characters': sender_character}}
+        # Naye schema pe atomic $inc/$pull/$push -- na poora-array overwrite (race-condition
+        # risk khatam), na duplicate-copies wipe hone ka risk (purane full-object $pull wale
+        # schema mein agar kisi character ki 2+ copies hoti to $pull SAARI hata deta; ab
+        # count-based hone se sirf 1 copy hi move hoti hai, jaisa hona chahiye)
+        await asyncio.gather(
+            remove_character_from_user(sender_id, sender_character_id),
+            remove_character_from_user(receiver_id, receiver_character_id),
+            grant_character_to_user(sender_id, receiver_character_id),
+            grant_character_to_user(receiver_id, sender_character_id),
         )
 
         del pending_trades[(sender_id, receiver_id)]
@@ -145,7 +146,11 @@ async def gift(client, message):
         await message.reply_text("You need to provide a character ID! /gift character_id")
         return
 
-    character_id = message.command[1]
+    try:
+        character_id = int(message.command[1])
+    except ValueError:
+        await message.reply_text("Character ID must be a number!")
+        return
 
     # Fetch only the specific character instead of the whole array
     char_doc = await user_collection.find_one(
@@ -157,10 +162,8 @@ async def gift(client, message):
         await message.reply_text("You don't have this character in your collection!")
         return
 
-    character = char_doc['characters'][0]
-
     pending_gifts[(sender_id, receiver_id)] = {
-        'character': character,
+        'character_id': character_id,
         'receiver_username': receiver_username,
         'receiver_first_name': receiver_first_name
     }
@@ -192,35 +195,23 @@ async def on_gift_callback(client, callback_query):
         return
 
     if callback_query.data == "confirm_gift":
-        character = gift_info['character']
+        character_id = gift_info['character_id']
 
         # Verify sender still has it
-        sender_check = await user_collection.count_documents({'id': sender_id, 'characters.id': character['id']})
+        sender_check = await user_collection.count_documents({'id': sender_id, 'characters.id': character_id})
         if not sender_check:
             del pending_gifts[(sender_id, receiver_id)]
             await callback_query.message.edit_text("❌ Gift failed! You no longer have this character.")
             return
 
-        # ATOMIC: $pull from sender
-        await user_collection.update_one(
-            {'id': sender_id},
-            {'$pull': {'characters': {'id': character['id']}}}
+        # Naye schema pe: dono independent documents hain, parallel chalao
+        await asyncio.gather(
+            remove_character_from_user(sender_id, character_id),
+            grant_character_to_user(
+                receiver_id, character_id,
+                gift_info['receiver_username'], gift_info['receiver_first_name'],
+            ),
         )
-
-        # ATOMIC: $push to receiver (or create new user)
-        receiver = await user_collection.find_one({'id': receiver_id})
-        if receiver:
-            await user_collection.update_one(
-                {'id': receiver_id},
-                {'$push': {'characters': character}}
-            )
-        else:
-            await user_collection.insert_one({
-                'id': receiver_id,
-                'username': gift_info['receiver_username'],
-                'first_name': gift_info['receiver_first_name'],
-                'characters': [character],
-            })
 
         del pending_gifts[(sender_id, receiver_id)]
         await callback_query.message.edit_text(f"✅ You have successfully gifted your character to [{gift_info['receiver_first_name']}](tg://user?id={receiver_id})!")
