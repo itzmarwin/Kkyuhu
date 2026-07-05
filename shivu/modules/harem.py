@@ -9,6 +9,7 @@ from telegram.ext import CommandHandler, CallbackContext, CallbackQueryHandler
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from shivu import collection, user_collection, application
+from shivu.__main__ import characters_by_id
 
 async def harem(update: Update, context: CallbackContext, page=0) -> None:
     user_id = update.effective_user.id
@@ -22,36 +23,50 @@ async def harem(update: Update, context: CallbackContext, page=0) -> None:
             await update.callback_query.edit_message_text('You Have Not Guessed any Characters Yet..')
         return
 
-    # Sort characters
-    all_chars = user['characters']
-    all_chars_sorted = sorted(all_chars, key=lambda x: (x['anime'], x['id']))
+    # Naye {id,count} schema mein user['characters'] pehle se hi unique hai (ek entry
+    # per character, count field ke saath) -- purana Counter-based dedup ab zarurat nahi.
+    # Display ke liye naam/anime/rarity/img_url characters_by_id (master catalog cache)
+    # se join karte hain.
+    owned = user['characters']
+    owned_characters = []
+    for entry in owned:
+        info = characters_by_id.get(entry['id'])
+        if info is None:
+            # Character catalog se delete ho chuka hoga -- harem mein silently skip karo
+            continue
+        owned_characters.append({
+            'id': entry['id'],
+            'count': entry['count'],
+            'name': info['name'],
+            'anime': info['anime'],
+            'rarity': info.get('rarity'),
+            'img_url': info.get('img_url'),
+        })
 
-    # OPTIMIZATION: Use Counter for instant duplicate counting in memory
-    character_counts = Counter(c['id'] for c in all_chars_sorted)
+    # Sort -- ab id integer hai (pehle zero-padded string tha), isliye 100+ IDs pe bhi
+    # same-anime ke andar sahi numeric order milega
+    owned_characters.sort(key=lambda x: (x['anime'], x['id']))
 
-    # Extract unique characters while maintaining sort order
-    seen_ids = set()
-    unique_characters = []
-    for c in all_chars_sorted:
-        if c['id'] not in seen_ids:
-            seen_ids.add(c['id'])
-            unique_characters.append(c)
+    # X/Y (owned/total) ke liye -- PURE owned list se, page-slice se PEHLE nikalte hain.
+    # (Pehle ye sirf current page ke characters se ban raha tha, isliye ek anime 2 pages
+    # mein split hone par dono jagah galat number dikhta tha -- "22/422" phir "8/422"
+    # jabki dono jagah "30/422" hona chahiye tha.)
+    owned_anime_counts = Counter(c['anime'] for c in owned_characters)
 
-    total_pages = math.ceil(len(unique_characters) / 15)  
+    total_pages = math.ceil(len(owned_characters) / 15)
 
     if page < 0 or page >= total_pages:
-        page = 0  
+        page = 0
 
     harem_message = f"<b>{escape(update.effective_user.first_name)}'s Harem - Page {page+1}/{total_pages}</b>\n"
 
     # Pagination slice
-    current_characters = unique_characters[page*15:(page+1)*15]
+    current_characters = owned_characters[page*15:(page+1)*15]
 
-    # OPTIMIZATION: Batch fetch anime counts to prevent N+1 DB queries
+    # OPTIMIZATION: Batch fetch anime totals (global catalog counts) to prevent N+1 DB queries
     anime_names = list(set(c['anime'] for c in current_characters))
     anime_counts = {}
     if anime_names:
-        # FIX: await lagaya gaya hai
         cursor = await collection.aggregate([
             {"$match": {"anime": {"$in": anime_names}}},
             {"$group": {"_id": "$anime", "count": {"$sum": 1}}}
@@ -59,18 +74,27 @@ async def harem(update: Update, context: CallbackContext, page=0) -> None:
         async for doc in cursor:
             anime_counts[doc['_id']] = doc['count']
 
+    # Agar is page ka PEHLA character, PICHLE page ke AAKHRI character jaise hi anime ka
+    # hai, to header dobara mat dikhao -- seedha characters continue karo
+    continuing_same_anime = False
+    if page > 0 and current_characters:
+        prev_last_char = owned_characters[page*15 - 1]
+        if current_characters[0]['anime'] == prev_last_char['anime']:
+            continuing_same_anime = True
+
     # Group current page characters by anime
     current_grouped_characters = {k: list(v) for k, v in groupby(current_characters, key=lambda x: x['anime'])}
 
-    for anime, characters in current_grouped_characters.items():
-        anime_total = anime_counts.get(anime, 0)
-        harem_message += f'\n<b>{anime} {len(characters)}/{anime_total}</b>\n'
+    for i, (anime, characters) in enumerate(current_grouped_characters.items()):
+        if not (i == 0 and continuing_same_anime):
+            anime_total = anime_counts.get(anime, 0)
+            harem_message += f'\n<b>{anime} {owned_anime_counts[anime]}/{anime_total}</b>\n'
 
         for character in characters:
-            count = character_counts[character['id']]  
-            harem_message += f'{character["id"]} {character["name"]} ×{count}\n'
+            harem_message += f'{character["id"]} {character["name"]} ×{character["count"]}\n'
 
-    total_count = len(all_chars)
+    # Total_count = saare grabs (duplicates milaake), jaisa pehle len(all_chars) deta tha
+    total_count = sum(c['count'] for c in owned_characters)
     keyboard = [[InlineKeyboardButton(f"See Collection ({total_count})", switch_inline_query_current_chat=f"collection.{user_id}")]]
 
     if total_pages > 1:
@@ -83,17 +107,19 @@ async def harem(update: Update, context: CallbackContext, page=0) -> None:
 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # Image selection logic (Favorite or Random)
+    # Image selection logic (Favorite or Random) -- favorite ka lookup owned_characters
+    # mein hi karte hain (poori catalog mein nahi), taaki agar favorite trade/gift ho
+    # chuka ho to wo silently skip ho jaaye (jaisa pehle bhi hota tha)
     image_url = None
-    if 'favorites' in user and user['favorites']:
+    if user.get('favorites'):
         fav_character_id = user['favorites'][0]
-        fav_character = next((c for c in all_chars if c['id'] == fav_character_id), None)
-        if fav_character and 'img_url' in fav_character:
-            image_url = fav_character['img_url']
-    
-    if not image_url and all_chars:
-        random_character = random.choice(all_chars)
-        if 'img_url' in random_character:
+        fav_entry = next((c for c in owned_characters if c['id'] == fav_character_id), None)
+        if fav_entry and fav_entry.get('img_url'):
+            image_url = fav_entry['img_url']
+
+    if not image_url and owned_characters:
+        random_character = random.choice(owned_characters)
+        if random_character.get('img_url'):
             image_url = random_character['img_url']
 
     # Send or Edit Message
