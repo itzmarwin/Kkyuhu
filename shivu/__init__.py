@@ -1,7 +1,7 @@
-import logging  
+import logging
 import os
 from pyrogram import Client  # Kurigram drop-in replacement (Import pyrogram hi hoga)
-from telegram.ext import Application
+from telegram.ext import Application, AIORateLimiter
 from pymongo import AsyncMongoClient  # Line 5 Fix: Motor replaced with PyMongo Async
 
 logging.basicConfig(
@@ -22,17 +22,22 @@ api_id = Config.api_id
 api_hash = Config.api_hash
 TOKEN = Config.TOKEN
 GROUP_ID = Config.GROUP_ID
-CHARA_CHANNEL_ID = Config.CHARA_CHANNEL_ID 
-mongo_url = Config.mongo_url 
-PHOTO_URL = Config.PHOTO_URL 
-SUPPORT_CHAT = Config.SUPPORT_CHAT 
+CHARA_CHANNEL_ID = Config.CHARA_CHANNEL_ID
+mongo_url = Config.mongo_url
+PHOTO_URL = Config.PHOTO_URL
+SUPPORT_CHAT = Config.SUPPORT_CHAT
 UPDATE_CHAT = Config.UPDATE_CHAT
-BOT_USERNAME = Config.BOT_USERNAME 
+BOT_USERNAME = Config.BOT_USERNAME
 sudo_users = Config.sudo_users
-OWNER_ID = Config.OWNER_ID 
+OWNER_ID = Config.OWNER_ID
 
-# PTB Application
-application = Application.builder().token(TOKEN).build()
+application = (
+    Application.builder()
+    .token(TOKEN)
+    .rate_limiter(AIORateLimiter())
+    .concurrent_updates(256)
+    .build()
+)
 
 # Pyrogram Client (Running via Kurigram)
 shivuu = Client("Shivu", api_id, api_hash, bot_token=TOKEN)
