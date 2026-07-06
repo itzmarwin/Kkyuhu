@@ -8,6 +8,7 @@ from telegram.ext import InlineQueryHandler, CallbackContext
 
 from shivu import user_collection, collection, application, db
 from shivu.__main__ import characters_by_id
+from shivu.rarity import format_rarity_html
 
 
 async def get_global_guess_counts(char_ids):
@@ -121,9 +122,9 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
         if is_collection_search:
             user_character_count = char_count_map.get(c_id, 0)
             user_anime_characters = anime_count_map.get(c_anime, 0)
-            caption = f"<b> Look At <a href='tg://user?id={user['id']}'>{escape(user.get('first_name', user['id']))}</a>'s Character</b>\n\n🌸: <b>{character['name']} (x{user_character_count})</b>\n🏖️: <b>{c_anime} ({user_anime_characters}/{anime_total})</b>\n<b>{character['rarity']}</b>\n\n<b>🆔️:</b> {c_id}"
+            caption = f"<b> Look At <a href='tg://user?id={user['id']}'>{escape(user.get('first_name', user['id']))}</a>'s Character</b>\n\n🌸: <b>{character['name']} (x{user_character_count})</b>\n🏖️: <b>{c_anime} ({user_anime_characters}/{anime_total})</b>\n<b>{format_rarity_html(character['rarity'])}</b>\n\n<b>🆔️:</b> {c_id}"
         else:
-            caption = f"<b>Look At This Character !!</b>\n\n🌸:<b> {character['name']}</b>\n🏖️: <b>{c_anime}</b>\n<b>{character['rarity']}</b>\n🆔️: <b>{c_id}</b>\n\n<b>Globally Guessed {global_count} Times...</b>"
+            caption = f"<b>Look At This Character !!</b>\n\n🌸:<b> {character['name']}</b>\n🏖️: <b>{c_anime}</b>\n<b>{format_rarity_html(character['rarity'])}</b>\n🆔️: <b>{c_id}</b>\n\n<b>Globally Guessed {global_count} Times...</b>"
             
         results.append(
             InlineQueryResultPhoto(
