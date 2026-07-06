@@ -11,18 +11,6 @@ from shivu import user_collection, collection, application, db
 from shivu.cache import characters_by_id
 from shivu.rarity import format_rarity_html, format_rarity_plain_html
 
-
-# Telegram only allows <tg-emoji> in messages the bot sends/edits directly
-# (sendMessage/sendPhoto/editMessageCaption...) - never in the *initial*
-# content of an answerInlineQuery result, no matter who owns the bot.
-# So: send the plain-emoji caption first, then use chosen_inline_result +
-# edit_message_caption to swap in the premium version once the result has
-# actually been sent into a chat.
-#
-# result_id -> premium (tg-emoji) caption, filled in by inlinequery() and
-# consumed by on_chosen_inline_result(). In-memory like shivu's other pending_*
-# dicts (see trade.py) - if the bot restarts in between, the message just
-# stays on the plain-emoji caption, which is a safe fallback either way.
 pending_premium_captions = {}
 MAX_PENDING_CAPTIONS = 1000
 
@@ -175,9 +163,7 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
             )
             keyboard = [[InlineKeyboardButton("🔎 Search More", switch_inline_query_current_chat="")]]
 
-        # Random suffix (not just time.time()) because result_id now doubles as
-        # our cache key - two results generated in the same millisecond must
-        # never collide.
+        
         result_id = f"{c_id}_{int(time.time() * 1000)}_{random.randint(1000, 9999)}"
         pending_premium_captions[result_id] = premium_caption
 
@@ -188,10 +174,7 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
                 photo_url=character['img_url'],
                 caption=plain_caption,
                 parse_mode='HTML',
-                # Required even though it's not otherwise needed: Telegram only
-                # fills in inline_message_id on chosen_inline_result when an
-                # inline keyboard is attached, and we need that id to edit the
-                # premium emoji in afterwards.
+                
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
         )
