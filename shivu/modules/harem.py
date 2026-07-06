@@ -10,6 +10,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from shivu import collection, user_collection, application
 from shivu.__main__ import characters_by_id
+from shivu.rarity import format_rarity_html
 
 async def harem(update: Update, context: CallbackContext, page=0) -> None:
     user_id = update.effective_user.id
@@ -74,7 +75,7 @@ async def harem(update: Update, context: CallbackContext, page=0) -> None:
             harem_message += f'\n<b>{anime} {owned_anime_counts[anime]}/{anime_total}</b>\n'
 
         for character in characters:
-            harem_message += f'{character["id"]} {character["name"]} ×{character["count"]}\n'
+            harem_message += f'{character["id"]} {character["name"]} ×{character["count"]} {format_rarity_html(character["rarity"])}\n'
 
     total_count = sum(c['count'] for c in owned_characters)
     keyboard = [[InlineKeyboardButton(f"See Collection ({total_count})", switch_inline_query_current_chat=f"collection.{user_id}")]]
