@@ -1,5 +1,3 @@
-import asyncio
-import aiohttp
 from pymongo import ReturnDocument
 
 from telegram import Update
@@ -29,59 +27,6 @@ async def get_next_sequence_number(sequence_name):
         return 0
     return sequence_document['sequence_value']
 
-async def check_url_debug(url):
-    """
-    Debug version: instead of just True/False, returns a dict with
-    everything that happened, so we can see exactly where/why a URL fails.
-    Temporary - meant to be replaced with check_url() once we know the cause.
-    """
-    timeout = aiohttp.ClientTimeout(total=8)
-    log = []
-
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-
-            log.append(f"Trying HEAD {url}")
-            try:
-                async with session.head(url, allow_redirects=True) as response:
-                    log.append(f"HEAD status={response.status} final_url={response.url}")
-                    log.append(f"HEAD headers={dict(response.headers)}")
-                    if response.status < 400:
-                        return {"ok": True, "method": "HEAD", "status": response.status, "log": log}
-            except Exception as e:
-                log.append(f"HEAD raised {type(e).__name__}: {e}")
-
-            log.append(f"Trying GET {url}")
-            try:
-                async with session.get(url, allow_redirects=True) as response:
-                    log.append(f"GET status={response.status} final_url={response.url}")
-                    log.append(f"GET headers={dict(response.headers)}")
-                    return {"ok": response.status < 400, "method": "GET", "status": response.status, "log": log}
-            except Exception as e:
-                log.append(f"GET raised {type(e).__name__}: {e}")
-                return {"ok": False, "method": "GET", "status": None, "log": log}
-
-    except Exception as e:
-        log.append(f"Session-level error {type(e).__name__}: {e}")
-        return {"ok": False, "method": None, "status": None, "log": log}
-
-
-async def check_url(url):
-    timeout = aiohttp.ClientTimeout(total=8)
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            try:
-                async with session.head(url, allow_redirects=True) as response:
-                    if response.status < 400:
-                        return True
-            except aiohttp.ClientError:
-                pass
-
-            async with session.get(url, allow_redirects=True) as response:
-                return response.status < 400
-    except Exception:
-        return False
-
 async def upload(update: Update, context: CallbackContext) -> None:
     if str(update.effective_user.id) not in sudo_users:
         await update.message.reply_text('Ask My Owner...')
@@ -95,14 +40,6 @@ async def upload(update: Update, context: CallbackContext) -> None:
 
         character_name = args[1].replace('-', ' ').title()
         anime = args[2].replace('-', ' ').title()
-
-        debug_result = await check_url_debug(args[0])
-        debug_text = "URL CHECK DEBUG:\n" + "\n".join(debug_result["log"])
-        await update.message.reply_text(debug_text[:4000])
-
-        if not debug_result["ok"]:
-            await update.message.reply_text('Invalid URL.')
-            return
 
         try:
             rarity = int(args[3])
