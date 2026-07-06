@@ -30,11 +30,19 @@ async def get_next_sequence_number(sequence_name):
     return sequence_document['sequence_value']
 
 async def check_url(url):
+    timeout = aiohttp.ClientTimeout(total=8)
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.head(url, timeout=5) as response:
-                return response.status == 200
-    except:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            try:
+                async with session.head(url, allow_redirects=True) as response:
+                    if response.status < 400:
+                        return True
+            except aiohttp.ClientError:
+                pass
+
+            async with session.get(url, allow_redirects=True) as response:
+                return response.status < 400
+    except Exception:
         return False
 
 async def upload(update: Update, context: CallbackContext) -> None:
