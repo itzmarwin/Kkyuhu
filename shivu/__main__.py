@@ -13,6 +13,7 @@ from telegram.ext import CommandHandler, CallbackContext, MessageHandler, filter
 from shivu import collection, top_global_groups_collection, group_user_totals_collection, user_collection, user_totals_collection, shivuu
 from shivu import application, SUPPORT_CHAT, UPDATE_CHAT, db, LOGGER
 from shivu.modules import ALL_MODULES
+from shivu.rarity import RARITY_WEIGHTS, format_rarity_html
 
 
 all_characters_cache = []   
@@ -28,14 +29,6 @@ first_correct_guesses = {}
 
 last_user = {}
 warned_users = {}
-
-RARITY_WEIGHTS = {
-    "⚪ Common": 100,
-    "🟢 Medium": 50,
-    "🟣 Rare": 25,
-    "🟡 Legendary": 10,
-    "💮 Special edition": 3,
-}
 
 
 
@@ -183,8 +176,8 @@ async def send_image(update: Update, context: CallbackContext) -> None:
     await context.bot.send_photo(
         chat_id=chat_id,
         photo=character['img_url'],
-        caption=f"""A New {character['rarity']} Character Appeared...\n/guess Character Name and add in Your Harem""",
-        parse_mode='Markdown')
+        caption=f"""A New {format_rarity_html(character['rarity'])} Character Appeared...\n/guess Character Name and add in Your Harem""",
+        parse_mode='HTML')
 
 async def guess(update: Update, context: CallbackContext) -> None:
     chat_id = update.effective_chat.id
@@ -244,7 +237,7 @@ async def guess(update: Update, context: CallbackContext) -> None:
             f'<b><a href="tg://user?id={user_id}">{escape(update.effective_user.first_name)}</a></b> You Guessed a New Character ✅️ \n\n'
             f'𝗡𝗔𝗠𝗘: <b>{character["name"]}</b> \n'
             f'𝗔𝗡𝗜𝗠𝗘: <b>{character["anime"]}</b> \n'
-            f'𝗥𝗔𝗜𝗥𝗧𝗬: <b>{character["rarity"]}</b>\n\n'
+            f'𝗥𝗔𝗜𝗥𝗧𝗬: <b>{format_rarity_html(character["rarity"])}</b>\n\n'
             f'This Character added in Your harem.. use /harem To see your harem',
             parse_mode='HTML', 
             reply_markup=InlineKeyboardMarkup(keyboard)
