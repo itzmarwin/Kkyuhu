@@ -3,7 +3,7 @@ RARITY_MAP = {
     2: {"name": "Rare",     "emoji": "🟠", "premium_id": "6224452757835752311"},
     3: {"name": "Legendary","emoji": "🟡", "premium_id": "6219595845608677184"},
     4: {"name": "Mythic",   "emoji": "💠", "premium_id": "6224516447905783899"},
-    5: {"name": "Astral",   "emoji": "🌌", "premium_id": "6221737208928281346"},
+    5: {"name": "Astral",  "emoji": "🌌", "premium_id": "6221737208928281346"},
     6: {"name": "Seraphic", "emoji": "🪽", "premium_id": "6224022079990146834"},
 }
 
@@ -28,18 +28,26 @@ def get_rarity_emoji(rarity_key: int) -> str:
 
 
 def format_rarity_html(rarity_key: int) -> str:
+    """For normal messages - supports premium emoji"""
     entry = RARITY_MAP.get(rarity_key)
     if not entry:
         return "Unknown"
 
     name = entry["name"]
+    emoji = entry["emoji"]
     premium_id = entry["premium_id"]
 
-    # TEST: No fallback emoji inside <tg-emoji>
     if premium_id:
-        return f'<tg-emoji emoji-id="{premium_id}"></tg-emoji> {name}'
+        return f'<tg-emoji emoji-id="{premium_id}">{emoji}</tg-emoji> {name}'
+    return f'{emoji} {name}'
 
-    return name
+
+def format_rarity_inline(rarity_key: int) -> str:
+    """For inline query results - <tg-emoji> doesn't work in inline, so use normal emoji"""
+    entry = RARITY_MAP.get(rarity_key)
+    if not entry:
+        return "Unknown"
+    return f'{entry["emoji"]} {entry["name"]}'
 
 
 def is_valid_rarity(rarity_key: int) -> bool:
