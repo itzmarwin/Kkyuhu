@@ -17,17 +17,6 @@ from shivu.cache import characters_by_id
 from shivu.rarity import format_rarity_html, format_rarity_plain_html
 
 
-# Telegram only allows <tg-emoji> in messages the bot sends/edits directly
-# (sendMessage/sendPhoto/editMessageCaption...) - never in the *initial*
-# content of an answerInlineQuery result, no matter who owns the bot.
-# So: send a plain-emoji caption + a temporary "Converting..." button first,
-# then use chosen_inline_result + edit_message_caption to swap in the premium
-# emoji AND clear that button, once the result has actually been sent into a chat.
-#
-# result_id -> premium caption (the version with <tg-emoji>)
-# In-memory like shivu's other pending_* dicts (see trade.py) - if the bot
-# restarts in between, the message just stays on the plain-emoji caption with
-# the Converting button, which is a safe (if slightly stale-looking) fallback.
 pending_inline_updates = {}
 MAX_PENDING_UPDATES = 1000
 
@@ -51,7 +40,6 @@ async def get_global_guess_counts(char_ids):
 
 
 async def get_anime_totals(anime_names):
-    """Diye gaye anime names ke liye catalog mein kitne total unique characters hain."""
     if not anime_names:
         return {}
     cursor = await collection.aggregate([
@@ -65,8 +53,6 @@ async def get_anime_totals(anime_names):
 def _build_captions(character, c_id, c_anime, is_collection_search, user=None,
                      user_character_count=0, user_anime_characters=0,
                      anime_total=0, global_count=0):
-    """Returns (plain_caption, premium_caption) - identical text, only the
-    rarity line differs (plain unicode emoji vs <tg-emoji> markup)."""
     if is_collection_search:
         template = (
             f"<b> Look At <a href='tg://user?id={user['id']}'>{escape(user.get('first_name', user['id']))}</a>'s Character</b>\n\n"
@@ -180,9 +166,6 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
                 character, c_id, c_anime, False, global_count=global_count,
             )
 
-        # Random suffix (not just time.time()) because result_id now doubles as
-        # our cache key - two results generated in the same millisecond must
-        # never collide.
         result_id = f"{c_id}_{int(time.time() * 1000)}_{random.randint(1000, 9999)}"
         pending_inline_updates[result_id] = premium_caption
 
@@ -193,10 +176,6 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
                 photo_url=character['img_url'],
                 caption=plain_caption,
                 parse_mode='HTML',
-                # Required even though the button itself does nothing: Telegram
-                # only fills in inline_message_id on chosen_inline_result when
-                # an inline keyboard is attached, and we need that id to edit
-                # the premium emoji in afterwards.
                 reply_markup=CONVERTING_MARKUP,
             )
         )
@@ -232,10 +211,6 @@ async def on_chosen_inline_result(update: Update, context: CallbackContext) -> N
             inline_message_id=chosen.inline_message_id,
             caption=premium_caption,
             parse_mode='HTML',
-            # Empty (not omitted) reply_markup. Omitting this parameter keeps
-            # whatever keyboard the message already has - it does NOT clear
-            # it. Passing an InlineKeyboardMarkup with zero rows is what
-            # actually removes the "Converting..." button.
             reply_markup=InlineKeyboardMarkup([]),
         )
     except Exception as e:
@@ -247,11 +222,5 @@ async def on_noop_callback(update: Update, context: CallbackContext) -> None:
 
 
 application.add_handler(InlineQueryHandler(inlinequery, block=False))
-# NOTE: this handler only ever fires if Inline Feedback is turned ON for the
-# bot in @BotFather (/setinlinefeedback -> pick this bot -> 100%). Without
-# that one-time setting, Telegram never sends chosen_inline_result updates at
-# all, and everything below silently never runs - the message just stays on
-# the plain-emoji "Converting..." version forever. This is the #1 reason this
-# whole thing appears to "not work" even when the code is correct.
 application.add_handler(ChosenInlineResultHandler(on_chosen_inline_result, block=False))
 application.add_handler(CallbackQueryHandler(on_noop_callback, pattern='^noop$', block=False))
