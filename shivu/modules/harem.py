@@ -10,7 +10,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from shivu import collection, user_collection, application
 from shivu.cache import characters_by_id
-from shivu.rarity import format_rarity_html
+from shivu.rarity import format_rarity_emoji_only_html
 
 async def harem(update: Update, context: CallbackContext, page=0) -> None:
     user_id = update.effective_user.id
@@ -36,6 +36,11 @@ async def harem(update: Update, context: CallbackContext, page=0) -> None:
             'anime': info['anime'],
             'rarity': info.get('rarity'),
             'img_url': info.get('img_url'),
+            # Optional field. Characters uploaded before this field existed
+            # (or any regular, non-event character) simply won't have it, so
+            # .get() returns None and the [tag] part is skipped for them.
+            # See upload.py for how this gets set on upload.
+            'tag': info.get('tag'),
         })
 
     owned_characters.sort(key=lambda x: (x['anime'], x['id']))
@@ -47,7 +52,7 @@ async def harem(update: Update, context: CallbackContext, page=0) -> None:
     if page < 0 or page >= total_pages:
         page = 0
 
-    harem_message = f"<b>{escape(update.effective_user.first_name)}'s Harem - Page {page+1}/{total_pages}</b>\n"
+    harem_message = f"<b>{escape(update.effective_user.first_name)}'s Harem • Page {page+1}/{total_pages}</b>\n"
 
     current_characters = owned_characters[page*15:(page+1)*15]
 
@@ -72,10 +77,14 @@ async def harem(update: Update, context: CallbackContext, page=0) -> None:
     for i, (anime, characters) in enumerate(current_grouped_characters.items()):
         if not (i == 0 and continuing_same_anime):
             anime_total = anime_counts.get(anime, 0)
-            harem_message += f'\n<b>{anime} {owned_anime_counts[anime]}/{anime_total}</b>\n'
+            harem_message += f'\n✦ {anime} • {owned_anime_counts[anime]}/{anime_total}\n'
 
         for character in characters:
-            harem_message += f'{character["id"]} {character["name"]} ×{character["count"]} {format_rarity_html(character["rarity"])}\n'
+            tag_part = f' [{character["tag"]}]' if character.get('tag') else ''
+            harem_message += (
+                f'╰ {character["id"]:04d} • {format_rarity_emoji_only_html(character["rarity"])} • '
+                f'{character["name"]}{tag_part} ×{character["count"]}\n'
+            )
 
     total_count = sum(c['count'] for c in owned_characters)
     keyboard = [[InlineKeyboardButton(f"See Collection ({total_count})", switch_inline_query_current_chat=f"collection.{user_id}")]]
