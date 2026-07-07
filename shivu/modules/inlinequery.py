@@ -201,8 +201,11 @@ async def on_chosen_inline_result(update: Update, context: CallbackContext) -> N
             parse_mode='HTML',
             reply_markup=result_markup,
         )
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.getLogger("shivu.inlinequery_debug").error(
+            f"edit_message_caption failed: {type(e).__name__}: {e}"
+        )
 
 
 application.add_handler(InlineQueryHandler(inlinequery, block=False))
