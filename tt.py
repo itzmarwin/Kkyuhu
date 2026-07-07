@@ -1,88 +1,100 @@
 """
-Standalone, minimal test - does NOT use pyrogram/PTB/the bot at all.
-Calls Telegram's sendMessage HTTP API directly with a <tg-emoji> HTML tag,
-then prints the FULL raw response Telegram sends back.
+Standalone test using python-telegram-bot itself (not raw HTTP this time).
+This isolates whether PTB is the one breaking the tg-emoji tag.
 
-This tells us definitively whether Telegram is accepting the custom_emoji
-entity or silently stripping it - by looking at the "entities" field in
-the response.
+Run from your project root:
 
-Run from your project root (so it can read .env for the token):
+    python3 ptb_emoji_test.py <your_telegram_user_id>
 
-    python3 tg_emoji_raw_test.py <your_own_telegram_user_id>
+Compares 3 send methods:
+  1. bot.send_message with parse_mode=HTML (plain string, like the raw test)
+  2. bot.send_message with parse_mode=ParseMode.HTML (PTB's enum, in case the
+     string "HTML" vs the enum behaves differently in this PTB version)
+  3. bot.send_photo with a caption containing the tag (this matches exactly
+     what upload.py / send_image / guess do in the real bot)
 
-You must have started a DM with your bot at least once before running this
-(so the bot is allowed to message you).
+After running, check your Telegram DM with the bot - do any of the 3 test
+messages show the actual premium emoji, or all fallback plain emoji?
+Also paste the console output here, especially any errors.
 """
 
 import sys
 import os
-import json
-import urllib.request
-import urllib.parse
+import asyncio
 
 from dotenv import load_dotenv
-
 load_dotenv()
 
-TOKEN = os.getenv("TOKEN")
+from telegram import Bot
+from telegram.constants import ParseMode
 
-# One of the ids you gave earlier - Mythic
+TOKEN = os.getenv("TOKEN")
 TEST_EMOJI_ID = "6224516447905783899"
 TEST_FALLBACK_EMOJI = "💠"
 
+# A small, known-public test image so send_photo has something to attach
+TEST_PHOTO_URL = "https://telegra.ph/file/b925c3985f0f325e62e17.jpg"
 
-def main():
+
+async def main():
     if len(sys.argv) != 2:
-        print("Usage: python3 tg_emoji_raw_test.py <your_telegram_user_id>")
+        print("Usage: python3 ptb_emoji_test.py <your_telegram_user_id>")
         return
 
     if not TOKEN:
-        print("Could not read TOKEN from .env - check the variable name matches what your bot uses.")
+        print("Could not read TOKEN from .env")
         return
 
-    chat_id = sys.argv[1]
+    chat_id = int(sys.argv[1])
+    bot = Bot(token=TOKEN)
 
-    text = f"Testing premium emoji: <tg-emoji emoji-id=\"{TEST_EMOJI_ID}\">{TEST_FALLBACK_EMOJI}</tg-emoji> Mythic"
+    tag_text = f'<tg-emoji emoji-id="{TEST_EMOJI_ID}">{TEST_FALLBACK_EMOJI}</tg-emoji> Mythic'
 
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML",
-    }
-
-    data = urllib.parse.urlencode(payload).encode()
-    req = urllib.request.Request(url, data=data)
-
-    print("Sending raw HTTP request to Telegram...")
-    print("Text sent:", text)
-    print()
-
+    print("=== Test 1: send_message, parse_mode='HTML' (string) ===")
     try:
-        with urllib.request.urlopen(req, timeout=10) as response:
-            body = response.read().decode()
+        msg = await bot.send_message(
+            chat_id=chat_id,
+            text=f"Test 1: {tag_text}",
+            parse_mode='HTML',
+        )
+        print("Sent. message_id =", msg.message_id)
+        print("msg.entities =", msg.entities)
+        print("msg.text =", repr(msg.text))
     except Exception as e:
-        print("Request failed:", repr(e))
-        return
-
-    parsed = json.loads(body)
-    print("FULL RAW RESPONSE FROM TELEGRAM:")
-    print(json.dumps(parsed, indent=2, ensure_ascii=False))
-
+        print("FAILED:", repr(e))
     print()
-    if parsed.get("ok"):
-        entities = parsed["result"].get("entities", [])
-        custom_emoji_entities = [e for e in entities if e.get("type") == "custom_emoji"]
-        if custom_emoji_entities:
-            print("SUCCESS: Telegram accepted the custom_emoji entity:")
-            print(custom_emoji_entities)
-        else:
-            print("Telegram returned entities =", entities)
-            print("NO custom_emoji entity in the response - Telegram silently stripped it.")
-    else:
-        print("Telegram returned an ERROR:", parsed.get("description"))
+
+    print("=== Test 2: send_message, parse_mode=ParseMode.HTML (enum) ===")
+    try:
+        msg = await bot.send_message(
+            chat_id=chat_id,
+            text=f"Test 2: {tag_text}",
+            parse_mode=ParseMode.HTML,
+        )
+        print("Sent. message_id =", msg.message_id)
+        print("msg.entities =", msg.entities)
+        print("msg.text =", repr(msg.text))
+    except Exception as e:
+        print("FAILED:", repr(e))
+    print()
+
+    print("=== Test 3: send_photo with caption containing the tag (matches real bot flow) ===")
+    try:
+        msg = await bot.send_photo(
+            chat_id=chat_id,
+            photo=TEST_PHOTO_URL,
+            caption=f"Test 3: {tag_text}",
+            parse_mode='HTML',
+        )
+        print("Sent. message_id =", msg.message_id)
+        print("msg.caption_entities =", msg.caption_entities)
+        print("msg.caption =", repr(msg.caption))
+    except Exception as e:
+        print("FAILED:", repr(e))
+    print()
+
+    print("Done. Check your DM with the bot for these 3 messages, and paste this full console output.")
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
