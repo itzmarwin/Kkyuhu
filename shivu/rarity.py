@@ -42,19 +42,6 @@ def format_rarity_html(rarity_key: int) -> str:
 
 
 def format_rarity_plain_html(rarity_key: int) -> str:
-    """Same output as format_rarity_html but WITHOUT the <tg-emoji> wrapper.
-
-    Why this exists: Telegram will not render a custom/premium emoji inside the
-    *initial* content of an answerInlineQuery result no matter what - not even
-    if the bot owner has Telegram Premium. The entity is only allowed in
-    messages the bot sends/edits directly (sendMessage, sendPhoto,
-    editMessageCaption, etc.) to a private/group/supergroup chat.
-
-    So inlinequery.py uses this plain version for the caption it first answers
-    the inline query with, then swaps in format_rarity_html()'s version via
-    edit_message_caption once chosen_inline_result confirms the result was
-    actually sent into a chat. See inlinequery.py for the full flow.
-    """
     entry = RARITY_MAP.get(rarity_key)
     if not entry:
         return "Unknown"
