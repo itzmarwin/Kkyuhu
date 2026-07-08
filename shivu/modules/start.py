@@ -34,33 +34,38 @@ async def start(update: Update, context: CallbackContext) -> None:
         
         
         caption = f"""
-        ***Heyyyy...***
+<b>✨ Welcome to Character Grabber!</b>
+━━━━━━━━━━━━━━━━━━━━━━
 
-***I am An Open Source Character Catcher Bot...Add Me in Your group.. And I will send Random Characters After.. every 100 messages in Group... Use /guess to.. Collect that Characters in Your Collection.. and see Collection by using /Harem... So add in Your groups and Collect Your harem***
+Every message brings the next character.
+Every guess expands your collection.
+Every rarity brings a new challenge.
+
+Add me to your group and start your journey today!
         """
         
         keyboard = [
-            [InlineKeyboardButton("ADD ME", url=f'http://t.me/{BOT_USERNAME}?startgroup=new')],
-            [InlineKeyboardButton("SUPPORT", url=f'https://t.me/{SUPPORT_CHAT}'),
-            InlineKeyboardButton("UPDATES", url=f'https://t.me/{UPDATE_CHAT}')],
-            [InlineKeyboardButton("HELP", callback_data='help')]
+            [InlineKeyboardButton("Add Me In Your Group", url=f'http://t.me/{BOT_USERNAME}?startgroup=new')],
+            [InlineKeyboardButton("Support", url=f'https://t.me/{SUPPORT_CHAT}'),
+            InlineKeyboardButton("Updates", url=f'https://t.me/{UPDATE_CHAT}')],
+            [InlineKeyboardButton("Help And Commands", callback_data='help')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         photo_url = random.choice(PHOTO_URL)
 
-        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=photo_url, caption=caption, reply_markup=reply_markup, parse_mode='markdown')
+        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=photo_url, caption=caption, reply_markup=reply_markup, parse_mode='HTML')
 
     else:
         photo_url = random.choice(PHOTO_URL)
         keyboard = [
-            [InlineKeyboardButton("ADD ME", url=f'http://t.me/{BOT_USERNAME}?startgroup=new')],
-            [InlineKeyboardButton("SUPPORT", url=f'https://t.me/{SUPPORT_CHAT}'),
-            InlineKeyboardButton("UPDATES", url=f'https://t.me/{UPDATE_CHAT}')],
-            [InlineKeyboardButton("HELP", callback_data='help')]
+            [InlineKeyboardButton("Add Me In Your Group", url=f'http://t.me/{BOT_USERNAME}?startgroup=new')],
+            [InlineKeyboardButton("Support", url=f'https://t.me/{SUPPORT_CHAT}'),
+            InlineKeyboardButton("Updates", url=f'https://t.me/{UPDATE_CHAT}')],
+            [InlineKeyboardButton("Help and Commands", callback_data='help')]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=photo_url, caption="🎴Alive!?... \n connect to me in PM For more information ",reply_markup=reply_markup )
+        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=photo_url, caption="<b>Looking for more?</b>\n\nEverything you need is waiting in my private chat.", reply_markup=reply_markup, parse_mode='HTML')
 
 async def button(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
@@ -68,41 +73,48 @@ async def button(update: Update, context: CallbackContext) -> None:
 
     if query.data == 'help':
         help_text = """
-    ***Help Section:***
-    
-***/guess: To Guess character (only works in group)***
-***/fav: Add Your fav***
-***/trade : To trade Characters***
-***/gift: Give any Character from Your Collection to another user.. (only works in groups)***
-***/collection: To see Your Collection***
-***/topgroups : See Top Groups.. Ppl Guesses Most in that Groups***
-***/top: Too See Top Users***
-***/ctop : Your ChatTop***
-***/changetime: Change Character appear time (only works in Groups)***
+<b>❖ Character Commands</b>
+
+/guess - Catch the spawned character. (Groups only)
+/collection - View your character collection.
+/fav - Set a character as your favorite.
+/gift - Gift a character to another collector. (Groups only)
+/trade - Trade characters with another collector.
+
+/topusers - View the Global Top Collectors.
+/ctop - View this Group's Top Collectors.
+/topgroups - View the Global Top Groups.
+
+/changetime - Change the character spawn interval. (Admins only).
    """
-        help_keyboard = [[InlineKeyboardButton("⤾ Bᴀᴄᴋ", callback_data='back')]]
+        help_keyboard = [[InlineKeyboardButton("Bᴀᴄᴋ", callback_data='back')]]
         reply_markup = InlineKeyboardMarkup(help_keyboard)
         
-        await context.bot.edit_message_caption(chat_id=update.effective_chat.id, message_id=query.message.message_id, caption=help_text, reply_markup=reply_markup, parse_mode='markdown')
+        await context.bot.edit_message_caption(chat_id=update.effective_chat.id, message_id=query.message.message_id, caption=help_text, reply_markup=reply_markup, parse_mode='HTML')
 
     elif query.data == 'back':
 
         caption = f"""
-        ***Hoyyyy...*** ✨
+<b>✨ Welcome to Character Grabber!</b>
+━━━━━━━━━━━━━━━━━━━━━━
 
-***I am An Open Source Character Catcher Bot..Add Me in Your group.. And I will send Random Characters After.. every 100 messages in Group... Use /guess to.. Collect that Characters in Your Collection.. and see Collection by using /Harem... So add in Your groups and Collect Your harem***
+Every message brings the next character.
+Every guess expands your collection.
+Every rarity brings a new challenge.
+
+Add me to your group and start your journey today!
         """
 
         
         keyboard = [
-            [InlineKeyboardButton("ADD ME", url=f'http://t.me/{BOT_USERNAME}?startgroup=new')],
-            [InlineKeyboardButton("SUPPORT", url=f'https://t.me/{SUPPORT_CHAT}'),
-            InlineKeyboardButton("UPDATES", url=f'https://t.me/{UPDATE_CHAT}')],
-            [InlineKeyboardButton("HELP", callback_data='help')]
+            [InlineKeyboardButton("Add Me In Your Group", url=f'http://t.me/{BOT_USERNAME}?startgroup=new')],
+            [InlineKeyboardButton("Support", url=f'https://t.me/{SUPPORT_CHAT}'),
+            InlineKeyboardButton("Updates", url=f'https://t.me/{UPDATE_CHAT}')],
+            [InlineKeyboardButton("Help And Commands", callback_data='help')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await context.bot.edit_message_caption(chat_id=update.effective_chat.id, message_id=query.message.message_id, caption=caption, reply_markup=reply_markup, parse_mode='markdown')
+        await context.bot.edit_message_caption(chat_id=update.effective_chat.id, message_id=query.message.message_id, caption=caption, reply_markup=reply_markup, parse_mode='HTML')
 
 
 application.add_handler(CallbackQueryHandler(button, pattern='^help$|^back$', block=False))
