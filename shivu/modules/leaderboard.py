@@ -63,25 +63,27 @@ async def get_group_leaderboard(chat_id: int):
 def find_user_rank(ranked_list, user_id):
     for index, entry in enumerate(ranked_list, start=1):
         if entry.get('user_id') == user_id:
-            return index, entry.get('count', 0)
-    return None, 0
+            return index, entry
+    return None, None
+
+
+def build_name_link(username, first_name):
+    display_name = html.escape(first_name or 'Unknown')
+
+    if len(display_name) > 15:
+        display_name = display_name[:15] + '...'
+
+    if username:
+        return f'<a href="https://t.me/{username}"><b>{display_name}</b></a>'
+    return f'<b>{display_name}</b>'
 
 
 def build_top_users_block(ranked_list, count_field):
     lines = []
     for i, user in enumerate(ranked_list[:10], start=1):
-        username = user.get('username', '')
-        first_name = html.escape(user.get('first_name', 'Unknown'))
-
-        if len(first_name) > 15:
-            first_name = first_name[:15] + '...'
-
+        name_link = build_name_link(user.get('username', ''), user.get('first_name', 'Unknown'))
         count = format_count(user.get(count_field, 0))
-
-        if username:
-            lines.append(f'#{i} <a href="https://t.me/{username}"><b>{first_name}</b></a> • <b>{count}</b>')
-        else:
-            lines.append(f'#{i} <b>{first_name}</b> • <b>{count}</b>')
+        lines.append(f'#{i} {name_link} • <b>{count}</b>')
 
     return '\n'.join(lines)
 
@@ -102,12 +104,14 @@ async def ctop(update: Update, context: CallbackContext) -> None:
     leaderboard_message = f'<b>⌬ {group_name} • Top Collectors</b>\n\n'
     leaderboard_message += build_top_users_block(ranked_list, 'count')
 
-    rank, count = find_user_rank(ranked_list, user_id)
-    leaderboard_message += '\n\n<b>Your Rank</b>\n'
-    if rank:
-        leaderboard_message += f'#{rank} • {format_count(count)}'
-    else:
-        leaderboard_message += 'Not Ranked Yet'
+    rank, entry = find_user_rank(ranked_list, user_id)
+    if not rank or rank > 10:
+        leaderboard_message += '\n\n<b>Your Rank</b>\n'
+        if rank:
+            name_link = build_name_link(entry.get('username', ''), entry.get('first_name', 'Unknown'))
+            leaderboard_message += f'#{rank} {name_link} • {format_count(entry.get("count", 0))}'
+        else:
+            leaderboard_message += 'Not Ranked Yet'
 
     photo_url = random.choice(PHOTO_URL) if PHOTO_URL else None
     if photo_url:
@@ -128,13 +132,14 @@ async def topusers(update: Update, context: CallbackContext) -> None:
     leaderboard_message = '<b>⌬ Global Top Collectors</b>\n\n'
     leaderboard_message += build_top_users_block(ranked_list, 'character_count')
 
-    rank, count = find_user_rank(ranked_list, user_id)
-    leaderboard_message += '\n\n<b>Your Rank</b>\n'
-    if rank:
-        first_name = html.escape(update.effective_user.first_name or 'Unknown')
-        leaderboard_message += f'#{rank} {first_name} • {format_count(count)}'
-    else:
-        leaderboard_message += 'Not Ranked Yet'
+    rank, entry = find_user_rank(ranked_list, user_id)
+    if not rank or rank > 10:
+        leaderboard_message += '\n\n<b>Your Rank</b>\n'
+        if rank:
+            name_link = build_name_link(entry.get('username', ''), entry.get('first_name', 'Unknown'))
+            leaderboard_message += f'#{rank} {name_link} • {format_count(entry.get("character_count", 0))}'
+        else:
+            leaderboard_message += 'Not Ranked Yet'
 
     photo_url = random.choice(PHOTO_URL) if PHOTO_URL else None
     if photo_url:
@@ -174,12 +179,13 @@ async def global_leaderboard(update: Update, context: CallbackContext) -> None:
             count = group.get('count', 0)
             break
 
-    leaderboard_message += '\n\n<b>Your Group Rank</b>\n'
-    if rank:
-        group_name = html.escape(update.effective_chat.title or 'This Group')
-        leaderboard_message += f'#{rank} {group_name} • {format_count(count)}'
-    else:
-        leaderboard_message += 'Not Ranked Yet'
+    if not rank or rank > 10:
+        leaderboard_message += '\n\n<b>Your Group Rank</b>\n'
+        if rank:
+            group_name = html.escape(update.effective_chat.title or 'This Group')
+            leaderboard_message += f'#{rank} {group_name} • {format_count(count)}'
+        else:
+            leaderboard_message += 'Not Ranked Yet'
 
     photo_url = random.choice(PHOTO_URL) if PHOTO_URL else None
     if photo_url:
