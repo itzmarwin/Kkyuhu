@@ -10,3 +10,8 @@ first_correct_guesses = {}
 
 last_user = {}
 warned_users = {}
+
+global_users_cache = {}
+global_groups_cache = {}
+group_leaderboard_cache = {}
+group_leaderboard_locks = {}
