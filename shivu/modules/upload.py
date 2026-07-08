@@ -7,21 +7,6 @@ from shivu import application, sudo_users, collection, db, CHARA_CHANNEL_ID, SUP
 from shivu.cache import all_characters_cache, characters_by_id
 from shivu.rarity import format_rarity_plain_html, is_valid_rarity
 
-# NOTE on rarity formatting in this file:
-# Every send_photo/edit_message_caption call below targets CHARA_CHANNEL_ID,
-# which is a broadcast channel. Per the Bot API docs, the "owner has Telegram
-# Premium -> bot can use custom emoji" grant only covers messages the bot
-# sends to private, group and supergroup chats - it does NOT cover channels.
-# (The only way to get custom emoji working in channels is for the bot itself
-# to own a Fragment-purchased collectible username.) So Telegram was silently
-# stripping the <tg-emoji> entity here and falling back to the plain emoji
-# inside it - same underlying behavior format_rarity_plain_html() already
-# documents and inlinequery.py already relies on for the same reason.
-#
-# We use format_rarity_plain_html() for every caption in this file so that's
-# an explicit, intentional choice instead of quietly depending on Telegram's
-# silent-strip fallback.
-
 WRONG_FORMAT_TEXT = """Wrong ❌️ format...  eg. /upload Img_url muzan-kibutsuji Demon-slayer 3
 
 img_url character-name anime-name rarity-number [tag]
@@ -67,11 +52,6 @@ async def upload(update: Update, context: CallbackContext) -> None:
         if not is_valid_rarity(rarity):
             await update.message.reply_text('Invalid rarity. Please use 1, 2, 3, 4, 5, or 6.')
             return
-
-        # Optional 5th arg - only present for event characters (e.g. 🏖, 🌸).
-        # Left out entirely for a normal upload, so characters created before
-        # this field existed and every regular character look identical: no
-        # 'tag' key at all, same as if this line never ran.
         tag = args[4] if len(args) == 5 else None
 
         id = await get_next_sequence_number('character_id')
