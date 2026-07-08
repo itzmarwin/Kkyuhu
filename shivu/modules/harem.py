@@ -13,10 +13,6 @@ from shivu.cache import characters_by_id
 from shivu.rarity import format_rarity_emoji_only_html, RARITY_MAP, get_rarity_name
 
 PAGE_SIZE = 15
-
-# Rarity buttons always render in key order (1=Common ... 6=Seraphic), two
-# per row, exactly matching the fixed 3-row/2-column layout that was asked
-# for - never reordered by count or anything else.
 RARITY_ORDER = [1, 2, 3, 4, 5, 6]
 
 
@@ -35,10 +31,6 @@ async def _load_owned_characters(user):
             'anime': info['anime'],
             'rarity': info.get('rarity'),
             'img_url': info.get('img_url'),
-            # Optional field. Characters uploaded before this field existed
-            # (or any regular, non-event character) simply won't have it, so
-            # .get() returns None and the [tag] part is skipped for them.
-            # See upload.py for how this gets set on upload.
             'tag': info.get('tag'),
         })
     owned_characters.sort(key=lambda x: (x['anime'], x['id']))
@@ -217,9 +209,6 @@ async def _send_or_edit(update, message, reply_markup, owned_characters, user):
                 if query.message.caption != message:
                     await query.edit_message_caption(caption=message, reply_markup=reply_markup, parse_mode='HTML')
                 else:
-                    # Caption text is unchanged (e.g. user re-clicked the same
-                    # page) but the keyboard might differ - still push the
-                    # markup update so buttons like Filter/Back reflect.
                     await query.edit_message_reply_markup(reply_markup=reply_markup)
             else:
                 if query.message.text != message:
