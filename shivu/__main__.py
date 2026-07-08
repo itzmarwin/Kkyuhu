@@ -295,15 +295,17 @@ async def fav(update: Update, context: CallbackContext) -> None:
     await user_collection.update_one({'id': user_id}, {'$set': {'favorites': [character_id]}})
     await update.message.reply_text(f'Character added to your favorite...')
 
-def main() -> None:
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(load_characters_into_memory())
-    loop.run_until_complete(ensure_indexes())
-    loop.run_until_complete(refresh_global_leaderboards())
+async def post_init(app) -> None:
+    await load_characters_into_memory()
+    await ensure_indexes()
+    await refresh_global_leaderboards()
 
     scheduler = AsyncIOScheduler()
     scheduler.add_job(refresh_global_leaderboards, 'interval', minutes=10)
     scheduler.start()
+
+def main() -> None:
+    application.post_init = post_init
 
     application.add_handler(CommandHandler(["guess", "protecc", "collect", "grab", "hunt"], guess, block=False))
     application.add_handler(CommandHandler("fav", fav, block=False))
