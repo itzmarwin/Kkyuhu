@@ -16,52 +16,15 @@ from shivu import user_collection, collection, application, db, LOGGER
 from shivu.cache import characters_by_id
 from shivu.rarity import format_rarity_plain_html, format_rarity_emoji_only_html, get_rarity_name
 
-
-# result_id -> premium caption (the version with <tg-emoji>), same as before.
-# In-memory like shivu's other pending_* dicts (see trade.py) - if the bot
-# restarts in between, the message just stays on the plain-emoji caption with
-# its button, which is a safe (if slightly stale-looking) fallback.
 pending_inline_updates = {}
 MAX_PENDING_UPDATES = 1000
-
-# inline_message_id -> current caption text, so on_top_collectors_click can
-# read "what's on the message right now" and append to it.
-#
-# Why this second cache exists: a CallbackQuery from a button attached to an
-# inline-mode message NEVER has .message populated - only .inline_message_id.
-# (query.message and query.inline_message_id are mutually exclusive: message
-# is set for buttons on messages the bot sent directly to a chat;
-# inline_message_id is set for buttons on messages sent via inline mode. Ours
-# is always the inline-mode case.) So there is no query.message.caption to
-# read from inside on_top_collectors_click - we have to have cached it
-# ourselves when we last wrote the caption.
 current_captions = {}
 MAX_CURRENT_CAPTIONS = 1000
 
-# Why every result still needs SOME button attached, even though these two
-# buttons serve very different purposes:
-# Telegram only fills in inline_message_id on chosen_inline_result when an
-# inline keyboard is attached to the result. Without that id we can never
-# edit the message afterwards, so the <tg-emoji> premium swap becomes
-# impossible. A button here is a hard technical requirement, not a style
-# choice - see on_chosen_inline_result() below.
-#
-# - Global search results get "⌬ Top Collectors" from the very start, and it
-#   STAYS after the emoji swap - it's genuinely clickable, see
-#   on_top_collectors_click().
-# - Collection search (harem) results get a neutral "✨ Details" button that
-#   does nothing and is deleted the instant the emoji swap happens (exactly
-#   like the old Converting button used to be for everything). It's neutral
-#   on purpose: if it said "Top Collectors" here too, it would always vanish
-#   without ever doing anything, which is itself a giveaway that something
-#   mechanical is going on.
+
 TOP_COLLECTORS_MARKUP = InlineKeyboardMarkup([[InlineKeyboardButton("⌬ Top Collectors", callback_data="noop")]])
 DETAILS_MARKUP = InlineKeyboardMarkup([[InlineKeyboardButton("✨ Details", callback_data="noop")]])
 
-# Unicode mathematical bold sans-serif "RARITY" - not an HTML tag, just a
-# fixed run of special-codepoint characters. Telegram renders it as plain
-# text in any chat type, no parse_mode trickery needed. Kept as one constant
-# so the exact literal only appears in one place.
 RARITY_LABEL = "𝙍𝘼𝙍𝙄𝙏𝙔"
 
 
@@ -93,9 +56,6 @@ async def get_anime_totals(anime_names):
 
 
 async def get_top_collectors(character_id, limit=5):
-    """Top `limit` users by how many times they've collected this specific
-    character (not their overall collection size). Returns a list of dicts:
-    [{'first_name': ..., 'count': ...}, ...] sorted highest first."""
     cursor = await user_collection.aggregate([
         {"$match": {"characters.id": character_id}},
         {"$project": {
@@ -125,12 +85,6 @@ async def get_top_collectors(character_id, limit=5):
 
 
 def _build_rarity_line(rarity_key, premium):
-    """(<emoji> RARITY: <Name>) - the fixed parenthesised rarity line used at
-    the bottom of every caption in this file. premium=True gives the
-    <tg-emoji> version (only valid once chosen_inline_result confirms the
-    message was actually sent somewhere); premium=False gives the plain
-    unicode-emoji version (required for the initial inline answer, and for
-    anywhere else a <tg-emoji> entity isn't allowed)."""
     emoji = format_rarity_emoji_only_html(rarity_key) if premium else format_rarity_plain_html(rarity_key).split(' ', 1)[0]
     name = get_rarity_name(rarity_key)
     return f'({emoji} {RARITY_LABEL}: {name})'
@@ -139,8 +93,6 @@ def _build_rarity_line(rarity_key, premium):
 def _build_captions(character, c_id, c_anime, is_collection_search, user=None,
                      user_character_count=0, user_anime_characters=0,
                      anime_total=0):
-    """Returns (plain_caption, premium_caption) - identical text, only the
-    rarity line differs (plain unicode emoji vs <tg-emoji> markup)."""
     char_name = escape(character['name'])
     anime_name = escape(c_anime)
 
@@ -250,9 +202,6 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
             markup = TOP_COLLECTORS_MARKUP
 
         result_id = f"{c_id}_{int(time.time() * 1000)}_{random.randint(1000, 9999)}"
-        # Stash both the premium caption AND whether this result should keep
-        # its button after the swap (collection search never does; global
-        # search always does, so it can later become clickable).
         pending_inline_updates[result_id] = {
             'premium_caption': premium_caption,
             'keep_button_after_swap': not is_collection_search,
@@ -297,14 +246,10 @@ async def on_chosen_inline_result(update: Update, context: CallbackContext) -> N
         return
 
     if pending['keep_button_after_swap']:
-        # Global search: keep the Top Collectors button alive so it can
-        # still be clicked after the emoji swap.
         new_markup = InlineKeyboardMarkup(
             [[InlineKeyboardButton("⌬ Top Collectors", callback_data=f"topcol:{pending['character_id']}")]]
         )
     else:
-        # Collection search: the Details button was only ever a vehicle for
-        # getting inline_message_id - remove it now that its job is done.
         new_markup = InlineKeyboardMarkup([])
 
     try:
@@ -315,9 +260,6 @@ async def on_chosen_inline_result(update: Update, context: CallbackContext) -> N
             reply_markup=new_markup,
         )
         if pending['keep_button_after_swap']:
-            # Only need to remember the caption if the button is still alive
-            # (collection search's Details button is gone already, so there's
-            # nothing left that could ever need to read this back).
             current_captions[chosen.inline_message_id] = pending['premium_caption']
             if len(current_captions) > MAX_CURRENT_CAPTIONS:
                 for stale_key in list(current_captions.keys())[:-MAX_CURRENT_CAPTIONS // 2]:
@@ -336,8 +278,6 @@ async def on_top_collectors_click(update: Update, context: CallbackContext) -> N
         return
 
     if not query.inline_message_id:
-        # This button only ever lives on inline-mode messages, so this
-        # shouldn't happen - but bail out cleanly rather than crash if it does.
         return
 
     current_caption = current_captions.pop(query.inline_message_id, None)
