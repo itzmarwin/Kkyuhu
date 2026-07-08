@@ -6,6 +6,7 @@ import asyncio
 from html import escape 
 
 from pymongo import ASCENDING
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram import Update
 from telegram.ext import CommandHandler, CallbackContext, MessageHandler, filters
@@ -25,6 +26,8 @@ from shivu.cache import (
     first_correct_guesses,
     last_user,
     warned_users,
+    global_users_cache,
+    global_groups_cache,
 )
 
 
@@ -48,6 +51,29 @@ async def load_characters_into_memory():
     characters_by_id.update({c['id']: c for c in fresh_data})
 
     LOGGER.info(f"Loaded {len(all_characters_cache)} characters into memory!")
+
+async def refresh_global_leaderboards():
+    users_cursor = user_collection.find(
+        {'character_count': {'$gt': 0}},
+        {'id': 1, 'username': 1, 'first_name': 1, 'character_count': 1, '_id': 0}
+    ).sort('character_count', -1)
+    users_ranked_list = await users_cursor.to_list(length=None)
+    for entry in users_ranked_list:
+        entry['user_id'] = entry.pop('id')
+
+    groups_cursor = top_global_groups_collection.find(
+        {},
+        {'group_id': 1, 'group_name': 1, 'count': 1, '_id': 0}
+    ).sort('count', -1)
+    groups_ranked_list = await groups_cursor.to_list(length=None)
+
+    now = time.time()
+    global_users_cache['ranked_list'] = users_ranked_list
+    global_users_cache['refreshed_at'] = now
+    global_groups_cache['ranked_list'] = groups_ranked_list
+    global_groups_cache['refreshed_at'] = now
+
+    LOGGER.info(f"Refreshed global leaderboards: {len(users_ranked_list)} users, {len(groups_ranked_list)} groups.")
 
 async def grant_character_to_user(user_id: int, character_id: int, username=None, first_name=None) -> None:
     inc_fields = {'characters.$.count': 1, 'character_count': 1}
@@ -209,6 +235,7 @@ async def guess(update: Update, context: CallbackContext) -> None:
             {'user_id': user_id, 'group_id': chat_id},
             {
                 '$set': {
+                    'user_id': user_id,
                     'username': update.effective_user.username,
                     'first_name': update.effective_user.first_name,
                 },
@@ -272,6 +299,11 @@ def main() -> None:
     loop = asyncio.get_event_loop()
     loop.run_until_complete(load_characters_into_memory())
     loop.run_until_complete(ensure_indexes())
+    loop.run_until_complete(refresh_global_leaderboards())
+
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(refresh_global_leaderboards, 'interval', minutes=10)
+    scheduler.start()
 
     application.add_handler(CommandHandler(["guess", "protecc", "collect", "grab", "hunt"], guess, block=False))
     application.add_handler(CommandHandler("fav", fav, block=False))
