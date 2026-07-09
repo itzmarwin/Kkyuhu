@@ -34,7 +34,7 @@ async def start(update: Update, context: CallbackContext) -> None:
         
         
         caption = f"""
-<tg-emoji emoji-id="5846154572434772316">🙋‍♀️</tg-emoji><b>✨ Welcome to Character Grabber!</b>
+<tg-emoji emoji-id="5846154572434772316">🙋‍♀️</tg-emoji><b>Welcome to Character Grabber!</b>
 ━━━━━━━━━━━━━━━━━━━━━━
 
 <tg-emoji emoji-id="5850203446694646751">✨</tg-emoji>Every message brings the next character.
@@ -46,9 +46,9 @@ async def start(update: Update, context: CallbackContext) -> None:
         
         keyboard = [
             [InlineKeyboardButton("Add Me In Your Group", url=f'http://t.me/{BOT_USERNAME}?startgroup=new')],
+            [InlineKeyboardButton("Help And Commands", callback_data='help')],
             [InlineKeyboardButton("Support", url=f'https://t.me/{SUPPORT_CHAT}'),
-            InlineKeyboardButton("Updates", url=f'https://t.me/{UPDATE_CHAT}')],
-            [InlineKeyboardButton("Help And Commands", callback_data='help')]
+            InlineKeyboardButton("Updates", url=f'https://t.me/{UPDATE_CHAT}')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         photo_url = random.choice(PHOTO_URL)
@@ -59,9 +59,9 @@ async def start(update: Update, context: CallbackContext) -> None:
         photo_url = random.choice(PHOTO_URL)
         keyboard = [
             [InlineKeyboardButton("Add Me In Your Group", url=f'http://t.me/{BOT_USERNAME}?startgroup=new')],
+            [InlineKeyboardButton("Help and Commands", callback_data='help')],
             [InlineKeyboardButton("Support", url=f'https://t.me/{SUPPORT_CHAT}'),
-            InlineKeyboardButton("Updates", url=f'https://t.me/{UPDATE_CHAT}')],
-            [InlineKeyboardButton("Help and Commands", callback_data='help')]
+            InlineKeyboardButton("Updates", url=f'https://t.me/{UPDATE_CHAT}')]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -108,9 +108,9 @@ Add me to your group and start your journey today!
         
         keyboard = [
             [InlineKeyboardButton("Add Me In Your Group", url=f'http://t.me/{BOT_USERNAME}?startgroup=new')],
+            [InlineKeyboardButton("Help And Commands", callback_data='help')],
             [InlineKeyboardButton("Support", url=f'https://t.me/{SUPPORT_CHAT}'),
-            InlineKeyboardButton("Updates", url=f'https://t.me/{UPDATE_CHAT}')],
-            [InlineKeyboardButton("Help And Commands", callback_data='help')]
+            InlineKeyboardButton("Updates", url=f'https://t.me/{UPDATE_CHAT}')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
