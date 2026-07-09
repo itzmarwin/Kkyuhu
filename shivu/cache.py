@@ -15,3 +15,5 @@ global_users_cache = {}
 global_groups_cache = {}
 group_leaderboard_cache = {}
 group_leaderboard_locks = {}
+
+started_users_cache = set()
