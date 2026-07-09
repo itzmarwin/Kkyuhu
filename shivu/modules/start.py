@@ -34,14 +34,14 @@ async def start(update: Update, context: CallbackContext) -> None:
         
         
         caption = f"""
-<b>✨ Welcome to Character Grabber!</b>
+<tg-emoji emoji-id="5846154572434772316">🙋‍♀️</tg-emoji><b>✨ Welcome to Character Grabber!</b>
 ━━━━━━━━━━━━━━━━━━━━━━
 
-Every message brings the next character.
-Every guess expands your collection.
-Every rarity brings a new challenge.
+<tg-emoji emoji-id="5850203446694646751">✨</tg-emoji>Every message brings the next character.
+<tg-emoji emoji-id="5850203446694646751">✨</tg-emoji>Every guess expands your collection.
+<tg-emoji emoji-id="5850203446694646751">✨</tg-emoji>Every rarity brings a new challenge.
 
-Add me to your group and start your journey today!
+<tg-emoji emoji-id="5845736169605698028">🥳</tg-emoji><b>Add me to your group and start your journey today!</b>
         """
         
         keyboard = [
