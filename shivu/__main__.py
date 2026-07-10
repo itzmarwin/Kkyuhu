@@ -11,7 +11,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram import Update
 from telegram.ext import CommandHandler, CallbackContext, MessageHandler, filters
 
-from shivu import collection, top_global_groups_collection, group_user_totals_collection, user_collection, user_totals_collection, shivuu
+from shivu import collection, top_global_groups_collection, group_user_totals_collection, user_collection, user_totals_collection, pm_users, shivuu
 from shivu import application, SUPPORT_CHAT, UPDATE_CHAT, db, LOGGER
 from shivu.modules import ALL_MODULES
 from shivu.rarity import RARITY_WEIGHTS, format_rarity_html
@@ -28,6 +28,7 @@ from shivu.cache import (
     warned_users,
     global_users_cache,
     global_groups_cache,
+    started_users_cache,
 )
 
 
@@ -51,6 +52,14 @@ async def load_characters_into_memory():
     characters_by_id.update({c['id']: c for c in fresh_data})
 
     LOGGER.info(f"Loaded {len(all_characters_cache)} characters into memory!")
+
+async def load_started_users_into_memory():
+    LOGGER.info("Loading started users into memory...")
+    started_users_cache.clear()
+    async for user in pm_users.find({}, {'_id': 1}):
+        started_users_cache.add(user['_id'])
+
+    LOGGER.info(f"Loaded {len(started_users_cache)} started users into memory!")
 
 async def refresh_global_leaderboards():
     users_cursor = user_collection.find(
@@ -297,6 +306,7 @@ async def fav(update: Update, context: CallbackContext) -> None:
 
 async def post_init(app) -> None:
     await load_characters_into_memory()
+    await load_started_users_into_memory()
     await ensure_indexes()
     await refresh_global_leaderboards()
 
