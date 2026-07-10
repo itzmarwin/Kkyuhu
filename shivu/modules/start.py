@@ -6,6 +6,7 @@ from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
 
 from shivu import application, PHOTO_URL, SUPPORT_CHAT, UPDATE_CHAT, BOT_USERNAME, db, GROUP_ID
 from shivu import pm_users as collection 
+from shivu.cache import started_users_cache
 
 
 async def start(update: Update, context: CallbackContext) -> None:
@@ -18,6 +19,7 @@ async def start(update: Update, context: CallbackContext) -> None:
     if user_data is None:
         
         await collection.insert_one({"_id": user_id, "first_name": first_name, "username": username})
+        started_users_cache.add(user_id)
         
         await context.bot.send_message(chat_id=GROUP_ID, 
                                        text=f"New user Started The Bot..\n User: <a href='tg://user?id={user_id}'>{escape(first_name)})</a>", 
