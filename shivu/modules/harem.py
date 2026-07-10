@@ -8,12 +8,14 @@ from collections import Counter
 from telegram.ext import CommandHandler, CallbackContext, CallbackQueryHandler
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from shivu import collection, user_collection, application
-from shivu.cache import characters_by_id
+from shivu import collection, user_collection, application, BOT_USERNAME
+from shivu.cache import characters_by_id, started_users_cache
 from shivu.rarity import format_rarity_emoji_only_html, RARITY_MAP, get_rarity_name
 
 PAGE_SIZE = 15
 RARITY_ORDER = [1, 2, 3, 4, 5, 6]
+
+NOT_STARTED_TEXT = "You need to start the bot in private first before using /harem."
 
 
 async def _load_owned_characters(user):
@@ -222,6 +224,11 @@ async def _send_or_edit(update, message, reply_markup, owned_characters, user):
 async def harem(update: Update, context: CallbackContext, page=0) -> None:
     user_id = update.effective_user.id
     display_name = update.effective_user.first_name
+
+    if update.message and user_id not in started_users_cache:
+        keyboard = [[InlineKeyboardButton("Start Me", url=f'https://t.me/{BOT_USERNAME}?start=harem')]]
+        await update.message.reply_text(NOT_STARTED_TEXT, reply_markup=InlineKeyboardMarkup(keyboard))
+        return
 
     user = await user_collection.find_one({'id': user_id})
     if not user or 'characters' not in user or not user['characters']:
