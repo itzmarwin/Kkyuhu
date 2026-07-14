@@ -1,12 +1,14 @@
 import asyncio
+import itertools
 
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from shivu import user_collection, shivuu
-from shivu.__main__ import grant_character_to_user, remove_character_from_user
+from shivu import shivuu
+from shivu.database import grant_character_to_user, remove_character_from_user, user_has_character
 
 pending_trades = {}
+_trade_id_counter = itertools.count(1)
 
 @shivuu.on_message(filters.command("trade"))
 async def trade(client, message):
@@ -37,60 +39,63 @@ async def trade(client, message):
         await message.reply_text("Character IDs must be numbers!")
         return
 
-    sender_char_doc = await user_collection.find_one(
-        {'id': sender_id, 'characters.id': sender_character_id},
-        {'characters.$': 1}
-    )
-    if not sender_char_doc:
+    if not await user_has_character(sender_id, sender_character_id):
         await message.reply_text("You don't have the character you're trying to trade!")
         return
 
-    receiver_char_doc = await user_collection.find_one(
-        {'id': receiver_id, 'characters.id': receiver_character_id},
-        {'characters.$': 1}
-    )
-    if not receiver_char_doc:
+    if not await user_has_character(receiver_id, receiver_character_id):
         await message.reply_text("The other user doesn't have the character they are trying to trade!")
         return
 
-    pending_trades[(sender_id, receiver_id)] = (sender_character_id, receiver_character_id)
+    trade_id = next(_trade_id_counter)
+    pending_trades[trade_id] = {
+        'sender_id': sender_id,
+        'receiver_id': receiver_id,
+        'sender_character_id': sender_character_id,
+        'receiver_character_id': receiver_character_id,
+    }
 
     keyboard = InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("Confirm Trade", callback_data="confirm_trade")],
-            [InlineKeyboardButton("Cancel Trade", callback_data="cancel_trade")]
+            [InlineKeyboardButton("Confirm Trade", callback_data=f"confirm_trade:{trade_id}")],
+            [InlineKeyboardButton("Cancel Trade", callback_data=f"cancel_trade:{trade_id}")]
         ]
     )
 
     await message.reply_text(f"{message.reply_to_message.from_user.mention}, do you accept this trade?", reply_markup=keyboard)
 
 
-@shivuu.on_callback_query(filters.create(lambda _, __, query: query.data in ["confirm_trade", "cancel_trade"]))
+@shivuu.on_callback_query(filters.create(lambda _, __, query: query.data.startswith("confirm_trade:") or query.data.startswith("cancel_trade:")))
 async def on_trade_callback(client, callback_query):
-    receiver_id = callback_query.from_user.id
+    action, _, trade_id_str = callback_query.data.partition(':')
+    try:
+        trade_id = int(trade_id_str)
+    except ValueError:
+        await callback_query.answer("This trade offer is no longer valid.", show_alert=True)
+        return
 
-    trade_info = None
-    sender_id = None
-    for (s_id, r_id), trade_data in pending_trades.items():
-        if r_id == receiver_id:
-            trade_info = trade_data
-            sender_id = s_id
-            break
-    
+    trade_info = pending_trades.get(trade_id)
     if not trade_info:
+        await callback_query.answer("This trade offer is no longer valid.", show_alert=True)
+        return
+
+    if callback_query.from_user.id != trade_info['receiver_id']:
         await callback_query.answer("This is not for you!", show_alert=True)
         return
 
-    if callback_query.data == "confirm_trade":
-        sender_character_id, receiver_character_id = trade_info
+    sender_id = trade_info['sender_id']
+    receiver_id = trade_info['receiver_id']
+    sender_character_id = trade_info['sender_character_id']
+    receiver_character_id = trade_info['receiver_character_id']
 
+    if action == "confirm_trade":
         sender_check, receiver_check = await asyncio.gather(
-            user_collection.count_documents({'id': sender_id, 'characters.id': sender_character_id}),
-            user_collection.count_documents({'id': receiver_id, 'characters.id': receiver_character_id}),
+            user_has_character(sender_id, sender_character_id),
+            user_has_character(receiver_id, receiver_character_id),
         )
 
         if not sender_check or not receiver_check:
-            del pending_trades[(sender_id, receiver_id)]
+            del pending_trades[trade_id]
             await callback_query.message.edit_text("❌ Trade failed! Someone no longer has the character.")
             return
 
@@ -101,16 +106,17 @@ async def on_trade_callback(client, callback_query):
             grant_character_to_user(receiver_id, sender_character_id),
         )
 
-        del pending_trades[(sender_id, receiver_id)]
+        del pending_trades[trade_id]
         
         await callback_query.message.edit_text(f"✅ Trade successful! {callback_query.from_user.mention} and the other user have exchanged characters.")
 
-    elif callback_query.data == "cancel_trade":
-        del pending_trades[(sender_id, receiver_id)]
+    else:
+        del pending_trades[trade_id]
         await callback_query.message.edit_text("❌️ Sad Cancelled....")
 
 
 pending_gifts = {}
+_gift_id_counter = itertools.count(1)
 
 @shivuu.on_message(filters.command("gift"))
 async def gift(client, message):
@@ -142,53 +148,55 @@ async def gift(client, message):
         await message.reply_text("Character ID must be a number!")
         return
 
-    char_doc = await user_collection.find_one(
-        {'id': sender_id, 'characters.id': character_id},
-        {'characters.$': 1}
-    )
-    
-    if not char_doc:
+    if not await user_has_character(sender_id, character_id):
         await message.reply_text("You don't have this character in your collection!")
         return
 
-    pending_gifts[(sender_id, receiver_id)] = {
+    gift_id = next(_gift_id_counter)
+    pending_gifts[gift_id] = {
+        'sender_id': sender_id,
+        'receiver_id': receiver_id,
         'character_id': character_id,
         'receiver_username': receiver_username,
-        'receiver_first_name': receiver_first_name
+        'receiver_first_name': receiver_first_name,
     }
 
     keyboard = InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("Confirm Gift", callback_data="confirm_gift")],
-            [InlineKeyboardButton("Cancel Gift", callback_data="cancel_gift")]
+            [InlineKeyboardButton("Confirm Gift", callback_data=f"confirm_gift:{gift_id}")],
+            [InlineKeyboardButton("Cancel Gift", callback_data=f"cancel_gift:{gift_id}")]
         ]
     )
 
     await message.reply_text(f"Do You Really Want To Gift {message.reply_to_message.from_user.mention} ?", reply_markup=keyboard)
 
 
-@shivuu.on_callback_query(filters.create(lambda _, __, query: query.data in ["confirm_gift", "cancel_gift"]))
+@shivuu.on_callback_query(filters.create(lambda _, __, query: query.data.startswith("confirm_gift:") or query.data.startswith("cancel_gift:")))
 async def on_gift_callback(client, callback_query):
-    sender_id = callback_query.from_user.id
+    action, _, gift_id_str = callback_query.data.partition(':')
+    try:
+        gift_id = int(gift_id_str)
+    except ValueError:
+        await callback_query.answer("This gift offer is no longer valid.", show_alert=True)
+        return
 
-    gift_info = None
-    receiver_id = None
-    for (s_id, r_id), gift_data in pending_gifts.items():
-        if s_id == sender_id:
-            gift_info = gift_data
-            receiver_id = r_id
-            break
-
+    gift_info = pending_gifts.get(gift_id)
     if not gift_info:
+        await callback_query.answer("This gift offer is no longer valid.", show_alert=True)
+        return
+
+    if callback_query.from_user.id != gift_info['sender_id']:
         await callback_query.answer("This is not for you!", show_alert=True)
         return
 
-    if callback_query.data == "confirm_gift":
-        character_id = gift_info['character_id']
+    sender_id = gift_info['sender_id']
+    receiver_id = gift_info['receiver_id']
+    character_id = gift_info['character_id']
 
-        sender_check = await user_collection.count_documents({'id': sender_id, 'characters.id': character_id})
+    if action == "confirm_gift":
+        sender_check = await user_has_character(sender_id, character_id)
         if not sender_check:
-            del pending_gifts[(sender_id, receiver_id)]
+            del pending_gifts[gift_id]
             await callback_query.message.edit_text("❌ Gift failed! You no longer have this character.")
             return
 
@@ -200,9 +208,9 @@ async def on_gift_callback(client, callback_query):
             ),
         )
 
-        del pending_gifts[(sender_id, receiver_id)]
+        del pending_gifts[gift_id]
         await callback_query.message.edit_text(f"✅ You have successfully gifted your character to [{gift_info['receiver_first_name']}](tg://user?id={receiver_id})!")
 
-    elif callback_query.data == "cancel_gift":
-        del pending_gifts[(sender_id, receiver_id)]
+    else:
+        del pending_gifts[gift_id]
         await callback_query.message.edit_text("❌️ Gift Cancelled....")
