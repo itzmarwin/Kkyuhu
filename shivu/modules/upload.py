@@ -1,9 +1,14 @@
-from pymongo import ReturnDocument
-
 from telegram import Update
 from telegram.ext import CommandHandler, CallbackContext
 
-from shivu import application, sudo_users, collection, db, CHARA_CHANNEL_ID, SUPPORT_CHAT
+from shivu import application, sudo_users, CHARA_CHANNEL_ID, SUPPORT_CHAT
+from shivu.database import (
+    get_next_sequence_number,
+    insert_character,
+    get_character,
+    delete_character,
+    update_character_field,
+)
 from shivu.cache import all_characters_cache, characters_by_id
 from shivu.rarity import format_rarity_plain_html, is_valid_rarity
 
@@ -16,18 +21,6 @@ use rarity number accordingly rarity Map
 rarity_map = 1 (🔵 Common), 2 (🟠 Rare), 3 (🟡 Legendary), 4 (💠 Mythic), 5 (🌌 Astral), 6 (🪽 Seraphic)
 
 [tag] is optional - only needed for event characters (e.g. 🏖 for a summer event). Leave it out for a normal character."""
-
-async def get_next_sequence_number(sequence_name):
-    sequence_collection = db.sequences
-    sequence_document = await sequence_collection.find_one_and_update(
-        {'_id': sequence_name},
-        {'$inc': {'sequence_value': 1}},
-        upsert=True,
-        return_document=ReturnDocument.BEFORE
-    )
-    if not sequence_document:
-        return 0
-    return sequence_document['sequence_value']
 
 async def upload(update: Update, context: CallbackContext) -> None:
     if str(update.effective_user.id) not in sudo_users:
@@ -74,14 +67,14 @@ async def upload(update: Update, context: CallbackContext) -> None:
                 parse_mode='HTML'
             )
             character['message_id'] = message.message_id
-            await collection.insert_one(character)
+            await insert_character(character)
             
             all_characters_cache.append(character)
             characters_by_id[character['id']] = character
             
             await update.message.reply_text('CHARACTER ADDED....')
         except:
-            await collection.insert_one(character)
+            await insert_character(character)
             all_characters_cache.append(character)
             characters_by_id[character['id']] = character
             await update.message.reply_text("Character Added but no Database Channel Found, Consider adding one.")
@@ -106,7 +99,7 @@ async def delete(update: Update, context: CallbackContext) -> None:
             await update.message.reply_text('ID ek number hona chahiye.')
             return
 
-        character = await collection.find_one_and_delete({'id': character_id})
+        character = await delete_character(character_id)
 
         if character:
             all_characters_cache[:] = [c for c in all_characters_cache if c['id'] != character_id]
@@ -140,7 +133,7 @@ async def update(update: Update, context: CallbackContext) -> None:
             await update.message.reply_text('ID ek number hona chahiye.')
             return
 
-        character = await collection.find_one({'id': character_id})
+        character = await get_character(character_id)
         if not character:
             await update.message.reply_text('Character not found.')
             return
@@ -165,7 +158,7 @@ async def update(update: Update, context: CallbackContext) -> None:
         else:
             new_value = args[2]
 
-        await collection.find_one_and_update({'id': character_id}, {'$set': {args[1]: new_value}})
+        await update_character_field(character_id, args[1], new_value)
 
         for i, c in enumerate(all_characters_cache):
             if c['id'] == character_id:
@@ -181,7 +174,7 @@ async def update(update: Update, context: CallbackContext) -> None:
                     caption=f'<b>Character Name:</b> {character["name"]}\n<b>Anime Name:</b> {character["anime"]}\n<b>Rarity:</b> {format_rarity_plain_html(character["rarity"])}\n<b>ID:</b> {character["id"]}\nUpdated by <a href="tg://user?id={update.effective_user.id}">{update.effective_user.first_name}</a>',
                     parse_mode='HTML'
                 )
-                await collection.find_one_and_update({'id': character_id}, {'$set': {'message_id': message.message_id}})
+                await update_character_field(character_id, 'message_id', message.message_id)
             except:
                 pass
         else:
