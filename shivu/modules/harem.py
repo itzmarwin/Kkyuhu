@@ -8,7 +8,8 @@ from collections import Counter
 from telegram.ext import CommandHandler, CallbackContext, CallbackQueryHandler
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from shivu import collection, user_collection, application, BOT_USERNAME
+from shivu import application, BOT_USERNAME
+from shivu.database import get_user, get_anime_totals
 from shivu.cache import characters_by_id, started_users_cache
 from shivu.rarity import format_rarity_emoji_only_html, RARITY_MAP, get_rarity_name
 
@@ -39,19 +40,6 @@ async def _load_owned_characters(user):
     return owned_characters
 
 
-async def _get_anime_totals_for(characters):
-    anime_names = list(set(c['anime'] for c in characters))
-    anime_counts = {}
-    if anime_names:
-        cursor = await collection.aggregate([
-            {"$match": {"anime": {"$in": anime_names}}},
-            {"$group": {"_id": "$anime", "count": {"$sum": 1}}}
-        ])
-        async for doc in cursor:
-            anime_counts[doc['_id']] = doc['count']
-    return anime_counts
-
-
 async def _build_full_harem_view(user, user_id, display_name, page):
     owned_characters = await _load_owned_characters(user)
 
@@ -62,7 +50,8 @@ async def _build_full_harem_view(user, user_id, display_name, page):
     header_line = f"<b>{escape(display_name)}'s Harem • Page {page+1}/{total_pages}</b>\n"
 
     current_characters = owned_characters[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]
-    anime_counts = await _get_anime_totals_for(current_characters)
+    anime_names = list(set(c['anime'] for c in current_characters))
+    anime_counts = await get_anime_totals(anime_names)
 
     owned_anime_counts = Counter(c['anime'] for c in owned_characters)
 
@@ -145,7 +134,8 @@ async def _build_rarity_filtered_view(owned_characters, user_id, header_name, ra
         page = 0
 
     current_characters = filtered[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]
-    anime_counts = await _get_anime_totals_for(current_characters)
+    anime_names = list(set(c['anime'] for c in current_characters))
+    anime_counts = await get_anime_totals(anime_names)
 
     owned_anime_counts_for_rarity = Counter(c['anime'] for c in filtered)
 
@@ -230,7 +220,7 @@ async def harem(update: Update, context: CallbackContext, page=0) -> None:
         await update.message.reply_text(NOT_STARTED_TEXT, reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
-    user = await user_collection.find_one({'id': user_id})
+    user = await get_user(user_id)
     if not user or 'characters' not in user or not user['characters']:
         if update.message:
             await update.message.reply_text('You Have Not Guessed any Characters Yet..')
@@ -276,7 +266,7 @@ async def harem_callback(update: Update, context: CallbackContext) -> None:
             return
         await query.answer()
 
-        user = await user_collection.find_one({'id': user_id})
+        user = await get_user(user_id)
         if not user or 'characters' not in user or not user['characters']:
             return
         owned_characters = await _load_owned_characters(user)
@@ -292,7 +282,7 @@ async def harem_callback(update: Update, context: CallbackContext) -> None:
             return
         await query.answer()
 
-        user = await user_collection.find_one({'id': user_id})
+        user = await get_user(user_id)
         if not user or 'characters' not in user or not user['characters']:
             return
         owned_characters = await _load_owned_characters(user)
