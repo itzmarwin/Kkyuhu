@@ -1,8 +1,7 @@
 import logging
 import os
-from pyrogram import Client  
+from pyrogram import Client
 from telegram.ext import Application, AIORateLimiter
-from pymongo import AsyncMongoClient  
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -40,12 +39,3 @@ application = (
 )
 
 shivuu = Client("Shivu", api_id, api_hash, bot_token=TOKEN)
-
-lol = AsyncMongoClient(mongo_url)
-db = lol['Character_catcher']
-collection = db['anime_characters_lol']
-user_totals_collection = db['user_totals_lmaoooo']
-user_collection = db["user_collection_lmaoooo"]
-group_user_totals_collection = db['group_user_totalsssssss']
-top_global_groups_collection = db['top_global_groups']
-pm_users = db['total_pm_users']
