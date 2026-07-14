@@ -12,7 +12,8 @@ from telegram.ext import (
     CallbackQueryHandler,
 )
 
-from shivu import user_collection, collection, application, db, LOGGER
+from shivu import application, LOGGER
+from shivu.database import get_anime_totals, get_top_collectors, get_user_with_characters, search_characters
 from shivu.cache import characters_by_id
 from shivu.rarity import format_rarity_plain_html, format_rarity_emoji_only_html, get_rarity_name
 
@@ -26,62 +27,6 @@ TOP_COLLECTORS_MARKUP = InlineKeyboardMarkup([[InlineKeyboardButton("⌬ Top Col
 DETAILS_MARKUP = InlineKeyboardMarkup([[InlineKeyboardButton("✨ Details", callback_data="noop")]])
 
 RARITY_LABEL = "𝙍𝘼𝙍𝙄𝙏𝙔"
-
-
-async def get_global_guess_counts(char_ids):
-    if not char_ids:
-        return {}
-    cursor = await user_collection.aggregate([
-        {"$match": {"characters.id": {"$in": char_ids}}},
-        {"$project": {"matched": {"$filter": {
-            "input": "$characters",
-            "cond": {"$in": ["$$this.id", char_ids]}
-        }}}},
-        {"$unwind": "$matched"},
-        {"$group": {"_id": "$matched.id", "count": {"$sum": "$matched.count"}}}
-    ])
-    result_list = await cursor.to_list(length=None)
-    return {item['_id']: item['count'] for item in result_list}
-
-
-async def get_anime_totals(anime_names):
-    if not anime_names:
-        return {}
-    cursor = await collection.aggregate([
-        {"$match": {"anime": {"$in": anime_names}}},
-        {"$group": {"_id": "$anime", "count": {"$sum": 1}}}
-    ])
-    result_list = await cursor.to_list(length=None)
-    return {item['_id']: item['count'] for item in result_list}
-
-
-async def get_top_collectors(character_id, limit=5):
-    cursor = await user_collection.aggregate([
-        {"$match": {"characters.id": character_id}},
-        {"$project": {
-            "first_name": 1,
-            "matched_count": {
-                "$first": {
-                    "$map": {
-                        "input": {"$filter": {
-                            "input": "$characters",
-                            "cond": {"$eq": ["$$this.id", character_id]}
-                        }},
-                        "as": "m",
-                        "in": "$$m.count"
-                    }
-                }
-            }
-        }},
-        {"$match": {"matched_count": {"$gt": 0}}},
-        {"$sort": {"matched_count": -1}},
-        {"$limit": limit}
-    ])
-    result_list = await cursor.to_list(length=limit)
-    return [
-        {'first_name': doc.get('first_name') or 'Unknown', 'count': doc.get('matched_count', 0)}
-        for doc in result_list
-    ]
 
 
 def _build_rarity_line(rarity_key, premium):
@@ -134,7 +79,7 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
             await update.inline_query.answer([], cache_time=5)
             return
 
-        user = await user_collection.find_one({'id': int(user_id)}, {'characters': 1, 'first_name': 1, 'id': 1})
+        user = await get_user_with_characters(int(user_id))
         if not user or 'characters' not in user:
             await update.inline_query.answer([], cache_time=5)
             return
@@ -155,7 +100,7 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
             char_count_map[entry['id']] = entry['count']
 
         if search_terms:
-            regex = re.compile(' '.join(search_terms), re.IGNORECASE)
+            regex = re.compile(re.escape(' '.join(search_terms)), re.IGNORECASE)
             owned_characters = [c for c in owned_characters if regex.search(c['name']) or regex.search(c['anime'])]
 
         owned_characters.sort(key=lambda c: c['id'])
@@ -169,13 +114,12 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
 
     else:
         if query:
-            regex = re.compile(query, re.IGNORECASE)
+            regex = re.compile(re.escape(query), re.IGNORECASE)
             db_query = {"$or": [{"name": regex}, {"anime": regex}]}
         else:
             db_query = {}
 
-        cursor = collection.find(db_query).sort('id', 1).skip(offset).limit(limit)
-        characters = await cursor.to_list(length=limit)
+        characters = await search_characters(db_query, offset, limit)
 
     next_offset = str(offset + limit) if len(characters) == limit else ""
 
