@@ -1,20 +1,30 @@
 import importlib
 import time
 import random
-import re
 import asyncio
-from html import escape 
+from html import escape
 
-from pymongo import ASCENDING
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram import Update
 from telegram.ext import CommandHandler, CallbackContext, MessageHandler, filters
 
-from shivu import collection, top_global_groups_collection, group_user_totals_collection, user_collection, user_totals_collection, pm_users, shivuu
-from shivu import application, SUPPORT_CHAT, UPDATE_CHAT, db, LOGGER
+from shivu import application, SUPPORT_CHAT, UPDATE_CHAT, shivuu, LOGGER
 from shivu.modules import ALL_MODULES
 from shivu.rarity import RARITY_WEIGHTS, format_rarity_html
+from shivu.database import (
+    ensure_indexes,
+    get_all_characters,
+    iter_all_pm_user_ids,
+    get_users_ranked_by_character_count,
+    get_groups_ranked_by_count,
+    grant_character_to_user,
+    remove_character_from_user,
+    record_group_guess,
+    get_user,
+    set_favorite_character,
+    get_group_message_frequency,
+)
 from shivu.cache import (
     all_characters_cache,
     characters_by_id,
@@ -32,18 +42,9 @@ from shivu.cache import (
 )
 
 
-
-async def ensure_indexes():
-    await collection.create_index([('id', ASCENDING)])
-    await collection.create_index([('anime', ASCENDING)])
-    await user_collection.create_index([('id', ASCENDING)])
-    await user_collection.create_index([('characters.id', ASCENDING)])
-    await user_collection.create_index([('character_count', -1)])
-    LOGGER.info("Indexes ensured.")
-
 async def load_characters_into_memory():
     LOGGER.info("Loading all characters into memory...")
-    fresh_data = await collection.find({}).to_list(length=None)
+    fresh_data = await get_all_characters()
 
     all_characters_cache.clear()
     all_characters_cache.extend(fresh_data)
@@ -56,25 +57,14 @@ async def load_characters_into_memory():
 async def load_started_users_into_memory():
     LOGGER.info("Loading started users into memory...")
     started_users_cache.clear()
-    async for user in pm_users.find({}, {'_id': 1}):
-        started_users_cache.add(user['_id'])
+    async for user_id in iter_all_pm_user_ids():
+        started_users_cache.add(user_id)
 
     LOGGER.info(f"Loaded {len(started_users_cache)} started users into memory!")
 
 async def refresh_global_leaderboards():
-    users_cursor = user_collection.find(
-        {'character_count': {'$gt': 0}},
-        {'id': 1, 'username': 1, 'first_name': 1, 'character_count': 1, '_id': 0}
-    ).sort('character_count', -1)
-    users_ranked_list = await users_cursor.to_list(length=None)
-    for entry in users_ranked_list:
-        entry['user_id'] = entry.pop('id')
-
-    groups_cursor = top_global_groups_collection.find(
-        {},
-        {'group_id': 1, 'group_name': 1, 'count': 1, '_id': 0}
-    ).sort('count', -1)
-    groups_ranked_list = await groups_cursor.to_list(length=None)
+    users_ranked_list = await get_users_ranked_by_character_count()
+    groups_ranked_list = await get_groups_ranked_by_count()
 
     now = time.time()
     global_users_cache['ranked_list'] = users_ranked_list
@@ -83,49 +73,6 @@ async def refresh_global_leaderboards():
     global_groups_cache['refreshed_at'] = now
 
     LOGGER.info(f"Refreshed global leaderboards: {len(users_ranked_list)} users, {len(groups_ranked_list)} groups.")
-
-async def grant_character_to_user(user_id: int, character_id: int, username=None, first_name=None) -> None:
-    inc_fields = {'characters.$.count': 1, 'character_count': 1}
-    set_fields = {}
-    if username is not None:
-        set_fields['username'] = username
-    if first_name is not None:
-        set_fields['first_name'] = first_name
-
-    update_doc = {'$inc': inc_fields}
-    if set_fields:
-        update_doc['$set'] = set_fields
-
-    result = await user_collection.update_one(
-        {'id': user_id, 'characters.id': character_id},
-        update_doc,
-    )
-    if result.matched_count == 0:
-        push_doc = {
-            '$push': {'characters': {'id': character_id, 'count': 1}},
-            '$inc': {'character_count': 1},
-        }
-        if set_fields:
-            push_doc['$set'] = set_fields
-        await user_collection.update_one(
-            {'id': user_id},
-            push_doc,
-            upsert=True,
-        )
-
-async def remove_character_from_user(user_id: int, character_id: int) -> None:
-    await user_collection.update_one(
-        {'id': user_id, 'characters.id': character_id},
-        {'$inc': {'characters.$.count': -1, 'character_count': -1}},
-    )
-    await user_collection.update_one(
-        {'id': user_id},
-        {'$pull': {'characters': {'id': character_id, 'count': {'$lte': 0}}}},
-    )
-
-def escape_markdown(text):
-    escape_chars = r'\*_`\\~>#+-=|{}.!'
-    return re.sub(r'([%s])' % re.escape(escape_chars), r'\\\1', text)
 
 
 
@@ -162,9 +109,7 @@ async def message_counter(update: Update, context: CallbackContext) -> None:
             message_counts[chat_id] = 0
 
         if chat_id not in group_freq_cache:
-            chat_frequency = await user_totals_collection.find_one({'chat_id': chat_id})
-            freq = chat_frequency.get('message_frequency', 100) if chat_frequency else 100
-            group_freq_cache[chat_id] = freq
+            group_freq_cache[chat_id] = await get_group_message_frequency(chat_id)
 
         current_cycle_freq = group_freq_cache[chat_id]
 
@@ -235,34 +180,16 @@ async def guess(update: Update, context: CallbackContext) -> None:
 
         character = last_characters[chat_id]
 
-        user_update = grant_character_to_user(
-            user_id, character['id'],
-            update.effective_user.username, update.effective_user.first_name,
+        await asyncio.gather(
+            grant_character_to_user(
+                user_id, character['id'],
+                update.effective_user.username, update.effective_user.first_name,
+            ),
+            record_group_guess(
+                chat_id, update.effective_chat.title,
+                user_id, update.effective_user.username, update.effective_user.first_name,
+            ),
         )
-
-        group_user_update = group_user_totals_collection.update_one(
-            {'user_id': user_id, 'group_id': chat_id},
-            {
-                '$set': {
-                    'user_id': user_id,
-                    'username': update.effective_user.username,
-                    'first_name': update.effective_user.first_name,
-                },
-                '$inc': {'count': 1},
-            },
-            upsert=True,
-        )
-
-        group_update = top_global_groups_collection.update_one(
-            {'group_id': chat_id},
-            {
-                '$set': {'group_name': update.effective_chat.title},
-                '$inc': {'count': 1},
-            },
-            upsert=True,
-        )
-
-        await asyncio.gather(user_update, group_user_update, group_update)
 
         keyboard = [[InlineKeyboardButton(f"See Harem", switch_inline_query_current_chat=f"collection.{user_id}")]]
 
@@ -291,7 +218,7 @@ async def fav(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text('Character id ek number hona chahiye.')
         return
 
-    user = await user_collection.find_one({'id': user_id})
+    user = await get_user(user_id)
     
     if not user:
         await update.message.reply_text('You have not Guessed any characters yet....')
@@ -301,7 +228,7 @@ async def fav(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text('This Character is Not In your collection')
         return
 
-    await user_collection.update_one({'id': user_id}, {'$set': {'favorites': [character_id]}})
+    await set_favorite_character(user_id, character_id)
     await update.message.reply_text(f'Character added to your favorite...')
 
 async def post_init(app) -> None:
