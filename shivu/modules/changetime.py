@@ -1,6 +1,6 @@
-from pymongo import ReturnDocument
 from pyrogram.enums import ChatMemberStatus, ChatType
-from shivu import user_totals_collection, shivuu
+from shivu import shivuu
+from shivu.database import set_group_message_frequency
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from shivu.cache import group_freq_cache
@@ -38,12 +38,7 @@ async def change_time(client: Client, message: Message):
             await message.reply_text('The message frequency must be greater than or equal to 100.')
             return
 
-        await user_totals_collection.find_one_and_update(
-            {'chat_id': str(chat_id)},
-            {'$set': {'message_frequency': new_frequency}},
-            upsert=True,
-            return_document=ReturnDocument.AFTER
-        )
+        await set_group_message_frequency(str(chat_id), new_frequency)
 
         group_freq_cache[str(chat_id)] = new_frequency
 
