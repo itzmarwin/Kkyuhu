@@ -1,4 +1,5 @@
 import os
+import tempfile
 import time
 import asyncio
 import random
@@ -7,11 +8,15 @@ import html
 from telegram import Update
 from telegram.ext import CommandHandler, CallbackContext
 
-from shivu import (application, PHOTO_URL, OWNER_ID,
-                    user_collection, top_global_groups_collection,
-                    group_user_totals_collection)
-
+from shivu import application, PHOTO_URL, OWNER_ID
 from shivu import sudo_users as SUDO_USERS
+from shivu.database import (
+    get_group_ranked_list,
+    get_user_count,
+    get_group_count,
+    iter_all_user_first_names,
+    iter_all_group_names,
+)
 from shivu.cache import (
     global_users_cache,
     global_groups_cache,
@@ -26,15 +31,6 @@ GROUPS_ONLY_TEXT = 'This command only works in groups.'
 
 def format_count(count: int) -> str:
     return f'{count:,}'
-
-
-async def build_group_ranked_list(chat_id: int):
-    cursor = group_user_totals_collection.find(
-        {'group_id': chat_id},
-        {'user_id': 1, 'username': 1, 'first_name': 1, 'count': 1, '_id': 0}
-    ).sort('count', -1)
-
-    return await cursor.to_list(length=None)
 
 
 async def get_group_leaderboard(chat_id: int):
@@ -54,7 +50,7 @@ async def get_group_leaderboard(chat_id: int):
         if entry and now - entry['refreshed_at'] < GROUP_CACHE_TTL:
             return entry
 
-        ranked_list = await build_group_ranked_list(chat_id)
+        ranked_list = await get_group_ranked_list(chat_id)
         entry = {'ranked_list': ranked_list, 'refreshed_at': now}
         group_leaderboard_cache[chat_id] = entry
         return entry
@@ -199,8 +195,8 @@ async def stats(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text("You are not authorized to use this command.")
         return
 
-    user_count = await user_collection.estimated_document_count()
-    group_count = await top_global_groups_collection.estimated_document_count()
+    user_count = await get_user_count()
+    group_count = await get_group_count()
 
     await update.message.reply_text(f'Total Users: {user_count}\nTotal groups: {group_count}')
 
@@ -208,29 +204,29 @@ async def send_users_document(update: Update, context: CallbackContext) -> None:
     if str(update.effective_user.id) not in SUDO_USERS:
         await update.message.reply_text('only For Sudo users...')
         return
-        
-    filename = 'users.txt'
-    with open(filename, 'w', encoding='utf-8') as f:
-        async for user in user_collection.find({}, {'first_name': 1}):
-            f.write(f"{user.get('first_name', 'Unknown')}\n")
-            
-    with open(filename, 'rb') as f:
-        await context.bot.send_document(chat_id=update.effective_chat.id, document=f)
-    os.remove(filename)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        filename = os.path.join(tmp_dir, 'users.txt')
+        with open(filename, 'w', encoding='utf-8') as f:
+            async for first_name in iter_all_user_first_names():
+                f.write(f"{first_name}\n")
+
+        with open(filename, 'rb') as f:
+            await context.bot.send_document(chat_id=update.effective_chat.id, document=f)
 
 async def send_groups_document(update: Update, context: CallbackContext) -> None:
     if str(update.effective_user.id) not in SUDO_USERS:
         await update.message.reply_text('Only For Sudo users...')
         return
-        
-    filename = 'groups.txt'
-    with open(filename, 'w', encoding='utf-8') as f:
-        async for group in top_global_groups_collection.find({}, {'group_name': 1}):
-            f.write(f"{group.get('group_name', 'Unknown')}\n\n")
-            
-    with open(filename, 'rb') as f:
-        await context.bot.send_document(chat_id=update.effective_chat.id, document=f)
-    os.remove(filename)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        filename = os.path.join(tmp_dir, 'groups.txt')
+        with open(filename, 'w', encoding='utf-8') as f:
+            async for group_name in iter_all_group_names():
+                f.write(f"{group_name}\n\n")
+
+        with open(filename, 'rb') as f:
+            await context.bot.send_document(chat_id=update.effective_chat.id, document=f)
 
 application.add_handler(CommandHandler(['ctop', 'gtop', 'chattop', 'grouptop'], ctop, block=False))
 application.add_handler(CommandHandler('stats', stats, block=False))
