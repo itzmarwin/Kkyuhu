@@ -4,8 +4,8 @@ from html import escape
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
 
-from shivu import application, PHOTO_URL, SUPPORT_CHAT, UPDATE_CHAT, BOT_USERNAME, db, GROUP_ID
-from shivu import pm_users as collection 
+from shivu import application, PHOTO_URL, SUPPORT_CHAT, UPDATE_CHAT, BOT_USERNAME, GROUP_ID
+from shivu.database import sync_pm_user
 from shivu.cache import started_users_cache
 
 
@@ -14,21 +14,14 @@ async def start(update: Update, context: CallbackContext) -> None:
     first_name = update.effective_user.first_name
     username = update.effective_user.username
 
-    user_data = await collection.find_one({"_id": user_id})
+    is_new_user = await sync_pm_user(user_id, first_name, username)
 
-    if user_data is None:
-        
-        await collection.insert_one({"_id": user_id, "first_name": first_name, "username": username})
+    if is_new_user:
         started_users_cache.add(user_id)
-        
-        await context.bot.send_message(chat_id=GROUP_ID, 
-                                       text=f"New user Started The Bot..\n User: <a href='tg://user?id={user_id}'>{escape(first_name)})</a>", 
+
+        await context.bot.send_message(chat_id=GROUP_ID,
+                                       text=f"New user Started The Bot..\n User: <a href='tg://user?id={user_id}'>{escape(first_name)}</a>",
                                        parse_mode='HTML')
-    else:
-        
-        if user_data['first_name'] != first_name or user_data['username'] != username:
-            
-            await collection.update_one({"_id": user_id}, {"$set": {"first_name": first_name, "username": username}})
 
     
 
