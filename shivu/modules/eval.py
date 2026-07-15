@@ -1,19 +1,22 @@
-#credit @ishikki_Akabane
-
 import io
-import os
 import textwrap
 import traceback
 from contextlib import redirect_stdout
 
-from shivu import application, LOGGER
+from shivu import application, LOGGER, OWNER_ID
 from telegram import Update
-from telegram.constants import ChatID, ParseMode
+from telegram.constants import ParseMode
 from telegram.ext import ContextTypes, CommandHandler
-from telegram.ext import CallbackContext 
 
 namespaces = {}
-DEV_LIST = [6404226395]
+
+
+def is_authorized(user_id) -> bool:
+    # Only the configured bot owner can use /eval, /exec, /clearlocals -- this
+    # is full remote-code-execution on the server, so it's kept to the
+    # narrowest possible set of people rather than the wider sudo_users list.
+    return user_id == OWNER_ID
+
 
 def namespace_of(chat, update, bot):
     if chat not in namespaces:
@@ -55,7 +58,7 @@ async def send(msg, bot, update):
 
 
 async def evaluate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_message.from_user.id not in DEV_LIST:
+    if not update.effective_message.from_user or not is_authorized(update.effective_message.from_user.id):
         return
 
     bot = context.bot
@@ -63,7 +66,7 @@ async def evaluate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_message.from_user.id not in DEV_LIST:
+    if not update.effective_message.from_user or not is_authorized(update.effective_message.from_user.id):
         return
 
     bot = context.bot
@@ -81,12 +84,6 @@ async def do(func, bot, update):
     content = update.message.text.split(" ", 1)[-1]
     body = cleanup_code(content)
     env = namespace_of(update.message.chat_id, update, bot)
-
-    os.chdir(os.getcwd())
-    with open(
-        "temp.txt", "w",
-    ) as temp:
-        temp.write(body)
 
     stdout = io.StringIO()
 
@@ -123,7 +120,7 @@ async def do(func, bot, update):
 
 
 async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_message.from_user.id not in DEV_LIST:
+    if not update.effective_message.from_user or not is_authorized(update.effective_message.from_user.id):
         return
 
     bot = context.bot
