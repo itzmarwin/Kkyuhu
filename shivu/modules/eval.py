@@ -12,9 +12,6 @@ namespaces = {}
 
 
 def is_authorized(user_id) -> bool:
-    # Only the configured bot owner can use /eval, /exec, /clearlocals -- this
-    # is full remote-code-execution on the server, so it's kept to the
-    # narrowest possible set of people rather than the wider sudo_users list.
     return user_id == OWNER_ID
 
 
