@@ -19,6 +19,7 @@ top_global_groups_collection   = db['top_global_groups']         # per-group glo
 pm_users_collection            = db['total_pm_users']            # users who've /start'd in PM    (was "pm_users")
 sequences_collection           = db['sequences']                 # auto-increment counters         (was inline "db.sequences")
 
+
 async def _create_index_safely(coll, keys, **kwargs):
     """Wraps create_index so that a duplicate-data conflict on a brand-new
     unique index logs a clear, actionable error instead of crashing the
@@ -35,6 +36,8 @@ async def _create_index_safely(coll, keys, **kwargs):
 
 
 async def ensure_indexes():
+    """Called once at startup (see post_init in __main__.py)."""
+
     await collection.create_index([('id', ASCENDING)])
     await collection.create_index([('anime', ASCENDING)])
     await user_collection.create_index([('id', ASCENDING)])
@@ -214,6 +217,7 @@ async def iter_all_user_first_names():
     async for user in user_collection.find({}, {'first_name': 1}):
         yield user.get('first_name', 'Unknown')
 
+
 async def record_group_guess(chat_id: int, group_name: str, user_id: int, username, first_name) -> None:
     """Called once per successful /guess -- bumps this user's per-group
     guess count and this group's global guess count together."""
@@ -275,10 +279,13 @@ async def iter_all_group_names():
     async for group in top_global_groups_collection.find({}, {'group_name': 1}):
         yield group.get('group_name', 'Unknown')
 
+
+async def iter_all_group_ids():
+    """Every group_id the bot has ever seen a guess in -- used for /broadcast."""
+    async for group in top_global_groups_collection.find({}, {'group_id': 1, '_id': 0}):
+        yield group['group_id']
+
 async def sync_pm_user(user_id: int, first_name: str, username: str) -> bool:
-    """Insert a new pm_users record on someone's first /start, or refresh
-    their stored name/username if it changed. Returns True if this is a
-    brand-new user, so the caller can decide whether to announce it."""
     user_data = await pm_users_collection.find_one({"_id": user_id})
 
     if user_data is None:
