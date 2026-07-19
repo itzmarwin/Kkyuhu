@@ -10,13 +10,22 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from shivu import application, BOT_USERNAME
 from shivu.database import get_user, get_anime_totals
-from shivu.cache import characters_by_id, started_users_cache
-from shivu.rarity import format_rarity_emoji_only_html, RARITY_MAP, get_rarity_name
+from shivu.cache import characters_by_id, started_users_cache, harem_mode_cache
+from shivu.rarity import format_rarity_emoji_only_html, RARITY_MAP, get_rarity_name, is_valid_rarity
 
 PAGE_SIZE = 15
 RARITY_ORDER = [1, 2, 3, 4, 5, 6]
 
 NOT_STARTED_TEXT = "You need to start the bot in private first before using /harem."
+
+_SMALL_CAPS_MAP = str.maketrans(
+    "abcdefghijklmnopqrstuvwxyz",
+    "ᴀʙᴄᴅᴇғɢʜɪᴊᴋʟᴍɴᴏᴘqʀsᴛᴜᴠᴡxʏᴢ",
+)
+
+
+def _to_small_caps(text: str) -> str:
+    return text.lower().translate(_SMALL_CAPS_MAP)
 
 
 async def _load_owned_characters(user):
@@ -117,16 +126,24 @@ def _build_rarity_menu_view(owned_characters, user_id, header_name):
     return menu_message, InlineKeyboardMarkup(keyboard)
 
 
-async def _build_rarity_filtered_view(owned_characters, user_id, header_name, rarity_key, page):
+async def _build_rarity_filtered_view(owned_characters, user_id, header_name, rarity_key, page, empty_state_is_saved_mode=False):
     filtered = [c for c in owned_characters if c['rarity'] == rarity_key]
     rarity_name = get_rarity_name(rarity_key)
 
     if not filtered:
-        message = (
-            f"<b>{escape(header_name)}'s Harem • {rarity_name}</b>\n\n"
-            f"You don't have any {rarity_name} characters yet."
-        )
-        keyboard = [[InlineKeyboardButton("⬅️ Back to Rarity Menu", callback_data=f"harem:filtermenu:{user_id}")]]
+        if empty_state_is_saved_mode:
+            message = (
+                f"<b>{escape(header_name)}'s Harem</b>\n\n"
+                f"You don't have any {rarity_name} characters in your collection yet. "
+                f"Keep guessing to catch some, or use /hmode to change your default view."
+            )
+            keyboard = [[InlineKeyboardButton("See Collection", switch_inline_query_current_chat=f"collection.{user_id}")]]
+        else:
+            message = (
+                f"<b>{escape(header_name)}'s Harem • {rarity_name}</b>\n\n"
+                f"You don't have any {rarity_name} characters yet."
+            )
+            keyboard = [[InlineKeyboardButton("⬅️ Back to Rarity Menu", callback_data=f"harem:filtermenu:{user_id}")]]
         return message, InlineKeyboardMarkup(keyboard)
 
     total_pages = max(1, math.ceil(len(filtered) / PAGE_SIZE))
@@ -211,6 +228,58 @@ async def _send_or_edit(update, message, reply_markup, owned_characters, user):
             pass
 
 
+def _build_hmode_home_view(user_id):
+    message = "ʏᴏᴜ ᴄᴀɴ ᴄʜᴀɴɢᴇ ʜᴏᴡ ʏᴏᴜʀ ʜᴀʀᴇᴍ ɪs sʜᴏᴡɴ ᴜsɪɴɢ ᴛʜᴇsᴇ ʙᴜᴛᴛᴏɴs"
+
+    keyboard = [
+        [
+            InlineKeyboardButton("Default", callback_data=f"hmode:setdefault:{user_id}"),
+            InlineKeyboardButton("✨ By Rarity", callback_data=f"hmode:submenu:{user_id}"),
+        ],
+        [InlineKeyboardButton("🔄 Reset", callback_data=f"hmode:reset:{user_id}")],
+    ]
+
+    return message, InlineKeyboardMarkup(keyboard)
+
+
+def _build_hmode_rarity_submenu(user_id):
+    message = "ᴄʜᴏᴏsᴇ ᴀ ʀᴀʀɪᴛʏ — ʏᴏᴜʀ ʜᴀʀᴇᴍ ᴡɪʟʟ ᴀʟᴡᴀʏs ᴏᴘᴇɴ ғɪʟᴛᴇʀᴇᴅ ᴛᴏ ɪᴛ"
+
+    keyboard = []
+    for i in range(0, len(RARITY_ORDER), 2):
+        row = []
+        for rarity_key in RARITY_ORDER[i:i+2]:
+            entry = RARITY_MAP[rarity_key]
+            row.append(InlineKeyboardButton(
+                entry['name'],
+                callback_data=f"hmode:set:{rarity_key}:{user_id}",
+                icon_custom_emoji_id=entry['premium_id'],
+            ))
+        keyboard.append(row)
+
+    keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data=f"hmode:main:{user_id}")])
+
+    return message, InlineKeyboardMarkup(keyboard)
+
+
+async def _send_or_edit_hmode(update, message, reply_markup):
+    """Text-only version of _send_or_edit for the /hmode settings menu --
+    there's no character photo involved here, just a plain message."""
+    if update.message:
+        await update.message.reply_text(message, parse_mode='HTML', reply_markup=reply_markup)
+    else:
+        query = update.callback_query
+        try:
+            if reply_markup is None:
+                await query.edit_message_text(message, parse_mode='HTML')
+            elif query.message.text != message:
+                await query.edit_message_text(message, parse_mode='HTML', reply_markup=reply_markup)
+            else:
+                await query.edit_message_reply_markup(reply_markup=reply_markup)
+        except Exception:
+            pass
+
+
 async def harem(update: Update, context: CallbackContext, page=0) -> None:
     user_id = update.effective_user.id
     display_name = update.effective_user.first_name
@@ -228,7 +297,16 @@ async def harem(update: Update, context: CallbackContext, page=0) -> None:
             await update.callback_query.edit_message_text('You Have Not Guessed any Characters Yet..')
         return
 
-    harem_message, reply_markup, owned_characters = await _build_full_harem_view(user, user_id, display_name, page)
+    saved_rarity = harem_mode_cache.get(user_id)
+    if saved_rarity and is_valid_rarity(saved_rarity):
+        owned_characters = await _load_owned_characters(user)
+        harem_message, reply_markup = await _build_rarity_filtered_view(
+            owned_characters, user_id, display_name, saved_rarity, page,
+            empty_state_is_saved_mode=True,
+        )
+    else:
+        harem_message, reply_markup, owned_characters = await _build_full_harem_view(user, user_id, display_name, page)
+
     await _send_or_edit(update, harem_message, reply_markup, owned_characters, user)
 
 
@@ -296,6 +374,55 @@ async def harem_callback(update: Update, context: CallbackContext) -> None:
     await query.answer()
 
 
+async def hmode(update: Update, context: CallbackContext) -> None:
+    user_id = update.effective_user.id
+    message, reply_markup = _build_hmode_home_view(user_id)
+    await _send_or_edit_hmode(update, message, reply_markup)
+
+
+async def hmode_callback(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    data = query.data
+    parts = data.split(':')
+    action = parts[1]
+    user_id = int(parts[-1])
+
+    if query.from_user.id != user_id:
+        await query.answer("its Not Your Settings", show_alert=True)
+        return
+
+    await query.answer()
+
+    if action == 'main':
+        message, reply_markup = _build_hmode_home_view(user_id)
+        await _send_or_edit_hmode(update, message, reply_markup)
+        return
+
+    if action == 'submenu':
+        message, reply_markup = _build_hmode_rarity_submenu(user_id)
+        await _send_or_edit_hmode(update, message, reply_markup)
+        return
+
+    if action in ('setdefault', 'reset'):
+        harem_mode_cache.pop(user_id, None)
+        message = "ʜᴀʀᴇᴍ ᴍᴏᴅᴇ sᴇᴛ ᴛᴏ ᴅᴇғᴀᴜʟᴛ"
+        await _send_or_edit_hmode(update, message, None)
+        return
+
+    if action == 'set':
+        rarity_key = int(parts[2])
+        if is_valid_rarity(rarity_key):
+            harem_mode_cache[user_id] = rarity_key
+            rarity_name = get_rarity_name(rarity_key)
+            message = f"ʜᴀʀᴇᴍ ᴍᴏᴅᴇ ᴄʜᴀɴɢᴇᴅ ᴛᴏ {_to_small_caps(rarity_name)}"
+            await _send_or_edit_hmode(update, message, None)
+        return
+
+
 application.add_handler(CommandHandler(["harem", "collection"], harem, block=False))
 harem_handler = CallbackQueryHandler(harem_callback, pattern='^harem', block=False)
 application.add_handler(harem_handler)
+
+application.add_handler(CommandHandler(["hmode", "haremmode"], hmode, block=False))
+hmode_handler = CallbackQueryHandler(hmode_callback, pattern='^hmode', block=False)
+application.add_handler(hmode_handler)
