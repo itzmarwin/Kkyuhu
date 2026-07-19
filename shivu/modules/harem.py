@@ -18,15 +18,6 @@ RARITY_ORDER = [1, 2, 3, 4, 5, 6]
 
 NOT_STARTED_TEXT = "You need to start the bot in private first before using /harem."
 
-_SMALL_CAPS_MAP = str.maketrans(
-    "abcdefghijklmnopqrstuvwxyz",
-    "ᴀʙᴄᴅᴇғɢʜɪᴊᴋʟᴍɴᴏᴘqʀsᴛᴜᴠᴡxʏᴢ",
-)
-
-
-def _to_small_caps(text: str) -> str:
-    return text.lower().translate(_SMALL_CAPS_MAP)
-
 
 async def _load_owned_characters(user):
     """Builds the same per-character dict shape used everywhere in this
@@ -126,7 +117,7 @@ def _build_rarity_menu_view(owned_characters, user_id, header_name):
     return menu_message, InlineKeyboardMarkup(keyboard)
 
 
-async def _build_rarity_filtered_view(owned_characters, user_id, header_name, rarity_key, page, empty_state_is_saved_mode=False):
+async def _build_rarity_filtered_view(owned_characters, user_id, header_name, rarity_key, page, empty_state_is_saved_mode=False, is_saved_mode=False):
     filtered = [c for c in owned_characters if c['rarity'] == rarity_key]
     rarity_name = get_rarity_name(rarity_key)
 
@@ -177,15 +168,31 @@ async def _build_rarity_filtered_view(owned_characters, user_id, header_name, ra
             )
 
     keyboard = []
-    if total_pages > 1:
-        nav_buttons = []
-        if page > 0:
-            nav_buttons.append(InlineKeyboardButton("⬅️", callback_data=f"harem:rarity:{rarity_key}:{page-1}:{user_id}"))
-        if page < total_pages - 1:
-            nav_buttons.append(InlineKeyboardButton("➡️", callback_data=f"harem:rarity:{rarity_key}:{page+1}:{user_id}"))
-        keyboard.append(nav_buttons)
 
-    keyboard.append([InlineKeyboardButton("⬅️ Back to Rarity Menu", callback_data=f"harem:filtermenu:{user_id}")])
+    if is_saved_mode:
+        total_count = sum(c['count'] for c in filtered)
+        keyboard.append([InlineKeyboardButton(f"See Collection ({total_count})", switch_inline_query_current_chat=f"collection.{user_id}")])
+
+        if total_pages > 1:
+            nav_buttons = []
+            if page > 0:
+                nav_buttons.append(InlineKeyboardButton("⬅️", callback_data=f"harem:page:{page-1}:{user_id}"))
+            if page < total_pages - 1:
+                nav_buttons.append(InlineKeyboardButton("➡️", callback_data=f"harem:page:{page+1}:{user_id}"))
+            keyboard.append(nav_buttons)
+
+        keyboard.append([InlineKeyboardButton("Filter by Rarity", callback_data=f"harem:filtermenu:{user_id}")])
+        keyboard.append([InlineKeyboardButton("Close", callback_data=f"harem:close:{user_id}")])
+    else:
+        if total_pages > 1:
+            nav_buttons = []
+            if page > 0:
+                nav_buttons.append(InlineKeyboardButton("⬅️", callback_data=f"harem:rarity:{rarity_key}:{page-1}:{user_id}"))
+            if page < total_pages - 1:
+                nav_buttons.append(InlineKeyboardButton("➡️", callback_data=f"harem:rarity:{rarity_key}:{page+1}:{user_id}"))
+            keyboard.append(nav_buttons)
+
+        keyboard.append([InlineKeyboardButton("⬅️ Back to Rarity Menu", callback_data=f"harem:filtermenu:{user_id}")])
 
     return message, InlineKeyboardMarkup(keyboard)
 
@@ -229,7 +236,7 @@ async def _send_or_edit(update, message, reply_markup, owned_characters, user):
 
 
 def _build_hmode_home_view(user_id):
-    message = "ʏᴏᴜ ᴄᴀɴ ᴄʜᴀɴɢᴇ ʜᴏᴡ ʏᴏᴜʀ ʜᴀʀᴇᴍ ɪs sʜᴏᴡɴ ᴜsɪɴɢ ᴛʜᴇsᴇ ʙᴜᴛᴛᴏɴs"
+    message = "You can change how your harem is shown using these buttons."
 
     keyboard = [
         [
@@ -243,7 +250,7 @@ def _build_hmode_home_view(user_id):
 
 
 def _build_hmode_rarity_submenu(user_id):
-    message = "ᴄʜᴏᴏsᴇ ᴀ ʀᴀʀɪᴛʏ ʏᴏᴜʀ ʜᴀʀᴇᴍ ᴡɪʟʟ ᴀʟᴡᴀʏs ᴏᴘᴇɴ ғɪʟᴛᴇʀᴇᴅ ᴛᴏ ɪᴛ"
+    message = "Choose a rarity — your harem will always open filtered to it."
 
     keyboard = []
     for i in range(0, len(RARITY_ORDER), 2):
@@ -303,6 +310,7 @@ async def harem(update: Update, context: CallbackContext, page=0) -> None:
         harem_message, reply_markup = await _build_rarity_filtered_view(
             owned_characters, user_id, display_name, saved_rarity, page,
             empty_state_is_saved_mode=True,
+            is_saved_mode=True,
         )
     else:
         harem_message, reply_markup, owned_characters = await _build_full_harem_view(user, user_id, display_name, page)
@@ -405,7 +413,7 @@ async def hmode_callback(update: Update, context: CallbackContext) -> None:
 
     if action in ('setdefault', 'reset'):
         harem_mode_cache.pop(user_id, None)
-        message = "ʜᴀʀᴇᴍ ᴍᴏᴅᴇ sᴇᴛ ᴛᴏ ᴅᴇғᴀᴜʟᴛ"
+        message = "Harem mode set to Default."
         await _send_or_edit_hmode(update, message, None)
         return
 
@@ -414,7 +422,7 @@ async def hmode_callback(update: Update, context: CallbackContext) -> None:
         if is_valid_rarity(rarity_key):
             harem_mode_cache[user_id] = rarity_key
             rarity_name = get_rarity_name(rarity_key)
-            message = f"ʜᴀʀᴇᴍ ᴍᴏᴅᴇ ᴄʜᴀɴɢᴇᴅ ᴛᴏ {_to_small_caps(rarity_name)}"
+            message = f"Harem mode changed to {rarity_name}."
             await _send_or_edit_hmode(update, message, None)
         return
 
