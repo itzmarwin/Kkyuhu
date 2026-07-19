@@ -17,3 +17,4 @@ group_leaderboard_cache = {}
 group_leaderboard_locks = {}
 
 started_users_cache = set()
+harem_mode_cache = {}
