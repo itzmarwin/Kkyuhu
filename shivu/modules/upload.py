@@ -7,6 +7,7 @@ from shivu.database import (
     insert_character,
     get_character,
     delete_character,
+    cascade_delete_character_from_users,
     update_character_field,
 )
 from shivu.cache import all_characters_cache, characters_by_id
@@ -104,13 +105,21 @@ async def delete(update: Update, context: CallbackContext) -> None:
         if character:
             all_characters_cache[:] = [c for c in all_characters_cache if c['id'] != character_id]
             characters_by_id.pop(character_id, None)
-            
+
+            affected_count = await cascade_delete_character_from_users(character_id)
+
             try:
                 await context.bot.delete_message(chat_id=CHARA_CHANNEL_ID, message_id=character['message_id'])
             except:
                 pass
-            
-            await update.message.reply_text('DONE')
+
+            if affected_count > 0:
+                await update.message.reply_text(
+                    f'DONE — Character deleted from the database.\n'
+                    f'It was owned by {affected_count} user(s), and has been removed from all of their collections.'
+                )
+            else:
+                await update.message.reply_text('DONE — Character deleted from the database.')
         else:
             await update.message.reply_text('Character not found in DB.')
     except Exception as e:
