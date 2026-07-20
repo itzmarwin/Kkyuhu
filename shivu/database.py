@@ -92,6 +92,34 @@ async def delete_character(character_id: int):
     return await collection.find_one_and_delete({'id': character_id})
 
 
+async def cascade_delete_character_from_users(character_id: int) -> int:
+    """Call this right after delete_character(). Removes character_id from
+    every user's owned-characters array and favorites, decrementing
+    character_count by however many copies each user had (not just 1).
+    Returns how many users were affected."""
+
+    affected_users = await user_collection.find(
+        {'characters.id': character_id},
+        {'id': 1, 'characters.$': 1},
+    ).to_list(length=None)
+
+    if not affected_users:
+        return 0
+
+    async def _clean_one(user_doc):
+        owned_count = user_doc['characters'][0]['count']
+        await user_collection.update_one(
+            {'id': user_doc['id']},
+            {
+                '$pull': {'characters': {'id': character_id}, 'favorites': character_id},
+                '$inc': {'character_count': -owned_count},
+            },
+        )
+
+    await asyncio.gather(*[_clean_one(user_doc) for user_doc in affected_users])
+    return len(affected_users)
+
+
 async def update_character_field(character_id: int, field: str, value):
     return await collection.find_one_and_update(
         {'id': character_id}, {'$set': {field: value}}
