@@ -214,9 +214,6 @@ async def profile(update: Update, context: CallbackContext) -> None:
 
     remaining = _cooldown_remaining(user_id)
     if remaining > 0:
-        await update.message.reply_text(
-            f"Please wait {remaining:.0f}s before checking your profile again."
-        )
         return
     profile_cooldowns[user_id] = time.monotonic()
     if len(profile_cooldowns) > MAX_TRACKED_USERS:
@@ -258,9 +255,6 @@ async def achievements(update: Update, context: CallbackContext) -> None:
 
     remaining = _cooldown_remaining(user_id)
     if remaining > 0:
-        await update.message.reply_text(
-            f"Please wait {remaining:.0f}s before checking your achievements again."
-        )
         return
     profile_cooldowns[user_id] = time.monotonic()
     if len(profile_cooldowns) > MAX_TRACKED_USERS:
