@@ -1,6 +1,7 @@
 import time
 from collections import Counter
 from datetime import datetime
+from html import escape
 
 from telegram import Update
 from telegram.ext import CommandHandler, CallbackContext
@@ -14,10 +15,10 @@ from shivu.cache import (
     profile_cooldowns,
     profile_data_cache,
 )
-from shivu.rarity import format_rarity_html
+from shivu.rarity import format_rarity_plain_html
 from shivu.achievements import evaluate_all, AchievementContext, TOTAL_ACHIEVEMENTS
 
-COOLDOWN_SECONDS = 5
+COOLDOWN_SECONDS = 4
 PROFILE_CACHE_TTL = 30
 PROGRESS_BAR_LENGTH = 10
 MAX_TRACKED_USERS = 2000
@@ -173,6 +174,13 @@ async def _get_or_compute_profile_data(user_id: int, user: dict) -> dict:
     return data
 
 
+LABEL_WIDTH = 14  # widest label is "Highest Rarity" (14 chars); everything else pads to match
+
+
+def _row(label: str, value) -> str:
+    return f"{label.ljust(LABEL_WIDTH)} • {value}"
+
+
 def _render_profile_text(display_name: str, user_id: int, data: dict) -> str:
     title = _get_title(data['character_count'])
     joined = _format_join_date(data['first_collected_at'])
@@ -180,32 +188,35 @@ def _render_profile_text(display_name: str, user_id: int, data: dict) -> str:
     progress_bar = _build_progress_bar(data['completion_pct'])
 
     if data['highest_rarity'] is not None:
-        highest_rarity_display = format_rarity_html(data['highest_rarity'])
+        highest_rarity_display = format_rarity_plain_html(data['highest_rarity'])
     else:
         highest_rarity_display = "None"
 
     rank_display = f"#{data['global_rank']:,}" if data['global_rank'] else "Unranked"
     streak_display = f"{data['streak_count']} Days" if data['streak_count'] else "0 Days"
 
-    return f"""⌬ <b>Collector Profile</b>
+    body_lines = [
+        _row("Name", escape(display_name)),
+        _row("Title", title),
+        _row("User ID", user_id),
+        _row("Joined", joined),
+        "",
+        _row("Collected", f"{data['character_count']:,}"),
+        _row("Completion", f"{data['unique_count']} / {data['total_characters']:,} ({data['completion_pct']:.2f}%)"),
+        "",
+        "Progress",
+        progress_bar,
+        "",
+        _row("Highest Rarity", highest_rarity_display),
+        _row("Global Rank", rank_display),
+        "",
+        _row("Favorite", escape(data['favorite_name'])),
+        _row("Catch Streak", streak_display),
+        _row("Achievements", f"{data['unlocked_count']}/{TOTAL_ACHIEVEMENTS}"),
+    ]
+    body = '\n'.join(body_lines)
 
-<b>Name</b>             • {display_name}
-<b>Title</b>            • {title}
-<b>User ID</b>          • {user_id}
-<b>Joined</b>           • {joined}
-
-<b>Collected</b>        • {data['character_count']:,}
-<b>Completion</b>       • {data['unique_count']} / {data['total_characters']:,} ({data['completion_pct']:.2f}%)
-
-<b>Progress</b>
-{progress_bar}
-
-<b>Highest Rarity</b>   • {highest_rarity_display}
-<b>Global Rank</b>      • {rank_display}
-
-<b>Favorite</b>         • {data['favorite_name']}
-<b>Catch Streak</b>     • {streak_display}
-<b>Achievements</b>     • {data['unlocked_count']}/{TOTAL_ACHIEVEMENTS}"""
+    return f"⌬ <b>Collector Profile</b>\n\n<pre>{body}</pre>"
 
 
 async def profile(update: Update, context: CallbackContext) -> None:
