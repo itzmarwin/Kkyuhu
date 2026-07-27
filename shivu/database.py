@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime, timezone, date
 
 from pymongo import AsyncMongoClient, ASCENDING, ReturnDocument
 from pymongo.errors import PyMongoError
@@ -163,13 +164,24 @@ async def user_has_character(user_id: int, character_id: int) -> bool:
     return count > 0
 
 
-async def grant_character_to_user(user_id: int, character_id: int, username=None, first_name=None) -> None:
+async def grant_character_to_user(
+    user_id: int, character_id: int, username=None, first_name=None,
+    is_new_catch: bool = False,
+) -> None:
+    """is_new_catch=True should ONLY be passed by the /guess flow (an
+    actual catch). Trades and gifts move an existing character between
+    users and must NOT count towards first_collected_at or catch streaks --
+    they leave is_new_catch as False."""
     inc_fields = {'characters.$.count': 1, 'character_count': 1}
     set_fields = {}
     if username is not None:
         set_fields['username'] = username
     if first_name is not None:
         set_fields['first_name'] = first_name
+
+    if is_new_catch:
+        streak_update = await _compute_streak_update(user_id)
+        set_fields.update(streak_update)
 
     update_doc = {'$inc': inc_fields}
     if set_fields:
@@ -191,6 +203,54 @@ async def grant_character_to_user(user_id: int, character_id: int, username=None
             push_doc,
             upsert=True,
         )
+
+    if is_new_catch:
+        # Runs after every branch above. Only ever writes once per user,
+        # the very first time this matches (field absent = never set
+        # before), so "Joined" date can never change afterwards -- covers
+        # both a brand-new user doc and a pre-existing doc from before
+        # this field existed.
+        await user_collection.update_one(
+            {'id': user_id, 'first_collected_at': {'$exists': False}},
+            {'$set': {'first_collected_at': datetime.now(timezone.utc)}},
+        )
+
+
+async def _compute_streak_update(user_id: int) -> dict:
+    """Reads the user's last_catch_date and returns the $set fields needed
+    to advance their catch streak for "today" (UTC calendar date).
+    Returns {} if today was already counted (no-op)."""
+    today = datetime.now(timezone.utc).date()
+    doc = await user_collection.find_one(
+        {'id': user_id}, {'last_catch_date': 1, 'streak_count': 1},
+    )
+
+    last_date_raw = doc.get('last_catch_date') if doc else None
+    last_date = _parse_stored_date(last_date_raw)
+    current_streak = doc.get('streak_count', 0) if doc else 0
+
+    if last_date == today:
+        return {}
+    elif last_date is not None and (today - last_date).days == 1:
+        new_streak = current_streak + 1
+    else:
+        new_streak = 1
+
+    return {
+        'last_catch_date': today.isoformat(),
+        'streak_count': new_streak,
+    }
+
+
+def _parse_stored_date(value):
+    """last_catch_date is stored as an ISO 'YYYY-MM-DD' string. Returns a
+    date object, or None if missing/unparseable."""
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
 
 
 async def remove_character_from_user(user_id: int, character_id: int) -> None:
@@ -344,4 +404,17 @@ async def set_group_message_frequency(chat_id: str, frequency: int):
         {'$set': {'message_frequency': frequency}},
         upsert=True,
         return_document=ReturnDocument.AFTER,
+    )
+
+
+async def unlock_new_achievements(user_id: int, achievement_ids: list) -> None:
+    """Persists newly-unlocked achievement IDs. Uses $addToSet (not
+    $push), so calling this again with IDs the user already has is a
+    harmless no-op -- achievements are permanent and never removed."""
+    if not achievement_ids:
+        return
+    await user_collection.update_one(
+        {'id': user_id},
+        {'$addToSet': {'unlocked_achievements': {'$each': achievement_ids}}},
+        upsert=True,
     )
