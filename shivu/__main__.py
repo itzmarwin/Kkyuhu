@@ -184,6 +184,7 @@ async def guess(update: Update, context: CallbackContext) -> None:
             grant_character_to_user(
                 user_id, character['id'],
                 update.effective_user.username, update.effective_user.first_name,
+                is_new_catch=True,
             ),
             record_group_guess(
                 chat_id, update.effective_chat.title,
