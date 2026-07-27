@@ -18,3 +18,6 @@ group_leaderboard_locks = {}
 
 started_users_cache = set()
 harem_mode_cache = {}
+
+profile_cooldowns = {}
+profile_data_cache = {}
