@@ -17,7 +17,7 @@ from shivu.cache import (
 from shivu.rarity import format_rarity_html
 from shivu.achievements import evaluate_all, AchievementContext, TOTAL_ACHIEVEMENTS
 
-COOLDOWN_SECONDS = 4
+COOLDOWN_SECONDS = 5
 PROFILE_CACHE_TTL = 30
 PROGRESS_BAR_LENGTH = 10
 MAX_TRACKED_USERS = 2000
@@ -54,7 +54,7 @@ def _get_title(character_count: int) -> str:
 def _build_progress_bar(percentage: float) -> str:
     filled = round((percentage / 100) * PROGRESS_BAR_LENGTH)
     filled = max(0, min(PROGRESS_BAR_LENGTH, filled))
-    return '■' * filled + '▱' * (PROGRESS_BAR_LENGTH - filled)
+    return '▰' * filled + '▱' * (PROGRESS_BAR_LENGTH - filled)
 
 
 def _format_join_date(first_collected_at) -> str:
@@ -243,7 +243,7 @@ def _render_achievements_text(data: dict) -> str:
             mark = "▫️"
             progress = f"{min(a['current'], a['target'])}/{a['target']}"
         lines.append(
-            f"{mark} <b>{a['name']}</b> — {a['description']}\n"
+            f"{mark} <b>{a['name']}</b> -- {a['description']}\n"
             f"    {progress}"
         )
     lines.append(f"\n<b>Total</b> • {data['unlocked_count']}/{TOTAL_ACHIEVEMENTS}")
