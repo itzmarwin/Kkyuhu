@@ -261,10 +261,7 @@ async def achievements(update: Update, context: CallbackContext) -> None:
         for stale_id in list(profile_cooldowns.keys())[:-MAX_TRACKED_USERS // 2]:
             profile_cooldowns.pop(stale_id, None)
 
-    user = await get_user(user_id)
-    if not user or not user.get('characters'):
-        await update.message.reply_text(NOT_STARTED_TEXT)
-        return
+    user = await get_user(user_id) or {}
 
     loading_message = await update.message.reply_text("⌬ Loading your achievements...")
 
