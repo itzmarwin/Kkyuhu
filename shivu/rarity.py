@@ -1,10 +1,10 @@
 RARITY_MAP = {
-    1: {"name": "Common",   "emoji": "🔵", "premium_id": "6219726962370289232"},
-    2: {"name": "Rare",     "emoji": "🟠", "premium_id": "6224452757835752311"},
-    3: {"name": "Legendary","emoji": "🟡", "premium_id": "6219595845608677184"},
-    4: {"name": "Mythic",   "emoji": "💠", "premium_id": "6224516447905783899"},
-    5: {"name": "Astral",  "emoji": "🌌", "premium_id": "6221737208928281346"},
-    6: {"name": "Seraphic", "emoji": "🪽", "premium_id": "6224022079990146834"},
+    1: {"name": "Common",   "emoji": "🟢", "premium_id": "6282749538650300945"},
+    2: {"name": "Rare",     "emoji": "🟠", "premium_id": "6282994824232574941"},
+    3: {"name": "Legendary","emoji": "🟡", "premium_id": "6282812653194715792"},
+    4: {"name": "Mythic",   "emoji": "💠", "premium_id": "6283045144069418520"},
+    5: {"name": "Astral",  "emoji": "🌌", "premium_id": "6282794356634035796"},
+    6: {"name": "Seraphic", "emoji": "🪽", "premium_id": "6282707254697271319"},
 }
 
 RARITY_WEIGHTS = {
