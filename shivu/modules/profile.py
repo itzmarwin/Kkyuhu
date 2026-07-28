@@ -15,7 +15,7 @@ from shivu.cache import (
     profile_cooldowns,
     profile_data_cache,
 )
-from shivu.rarity import format_rarity_plain_html
+from shivu.rarity import format_rarity_html
 from shivu.achievements import evaluate_all, AchievementContext, TOTAL_ACHIEVEMENTS
 
 COOLDOWN_SECONDS = 4
@@ -174,11 +174,8 @@ async def _get_or_compute_profile_data(user_id: int, user: dict) -> dict:
     return data
 
 
-LABEL_WIDTH = 14  # widest label is "Highest Rarity" (14 chars); everything else pads to match
-
-
 def _row(label: str, value) -> str:
-    return f"{label.ljust(LABEL_WIDTH)} • {value}"
+    return f"<b>{label}:</b> {value}"
 
 
 def _render_profile_text(display_name: str, user_id: int, data: dict) -> str:
@@ -188,7 +185,7 @@ def _render_profile_text(display_name: str, user_id: int, data: dict) -> str:
     progress_bar = _build_progress_bar(data['completion_pct'])
 
     if data['highest_rarity'] is not None:
-        highest_rarity_display = format_rarity_plain_html(data['highest_rarity'])
+        highest_rarity_display = format_rarity_html(data['highest_rarity'])
     else:
         highest_rarity_display = "None"
 
@@ -204,7 +201,7 @@ def _render_profile_text(display_name: str, user_id: int, data: dict) -> str:
         _row("Collected", f"{data['character_count']:,}"),
         _row("Completion", f"{data['unique_count']} / {data['total_characters']:,} ({data['completion_pct']:.2f}%)"),
         "",
-        "Progress",
+        "<b>Progress</b>",
         progress_bar,
         "",
         _row("Highest Rarity", highest_rarity_display),
@@ -216,7 +213,7 @@ def _render_profile_text(display_name: str, user_id: int, data: dict) -> str:
     ]
     body = '\n'.join(body_lines)
 
-    return f"⌬ <b>Collector Profile</b>\n\n<pre>{body}</pre>"
+    return f"⌬ <b>Collector Profile</b>\n\n{body}"
 
 
 async def profile(update: Update, context: CallbackContext) -> None:
@@ -254,7 +251,7 @@ def _render_achievements_text(data: dict) -> str:
             mark = "▫️"
             progress = f"{min(a['current'], a['target'])}/{a['target']}"
         lines.append(
-            f"{mark} <b>{a['name']}</b> -- {a['description']}\n"
+            f"{mark} <b>{a['name']}</b> — {a['description']}\n"
             f"    {progress}"
         )
     lines.append(f"\n<b>Total</b> • {data['unlocked_count']}/{TOTAL_ACHIEVEMENTS}")
