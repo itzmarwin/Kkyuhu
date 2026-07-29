@@ -196,10 +196,10 @@ async def guess(update: Update, context: CallbackContext) -> None:
 
         await update.message.reply_text(
             f'<b><a href="tg://user?id={user_id}">{escape(update.effective_user.first_name)}</a></b> You Guessed a New Character ✅️ \n\n'
-            f'𝗡𝗔𝗠𝗘: <b>{character["name"]}</b> \n'
-            f'𝗔𝗡𝗜𝗠𝗘: <b>{character["anime"]}</b> \n'
-            f'𝗥𝗔𝗜𝗥𝗧𝗬: <b>{format_rarity_html(character["rarity"])}</b>\n\n'
-            f'This Character added in Your harem.. use /harem To see your harem',
+            f'<b>NAME: {character["name"]}</b> \n'
+            f'<b>ANIME: {character["anime"]}</b> \n'
+            f'<b>RARITY: {format_rarity_html(character["rarity"])}</b>\n\n'
+            f'Use /harem To see your harem',
             parse_mode='HTML', 
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
