@@ -153,7 +153,7 @@ async def send_image(update: Update, context: CallbackContext) -> None:
     await context.bot.send_photo(
         chat_id=chat_id,
         photo=character['img_url'],
-        caption=f"""<b>{format_rarity_html(character['rarity'])} A New Character Appeared...\n/guess Character Name and add in Your Harem</b>""",
+        caption=f"""<b>{format_rarity_emoji_only_html(character['rarity'])} A New Character Appeared...\n/guess Character Name and add in Your Harem</b>""",
         parse_mode='HTML')
 
 async def guess(update: Update, context: CallbackContext) -> None:
