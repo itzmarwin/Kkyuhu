@@ -11,7 +11,7 @@ from telegram.ext import CommandHandler, CallbackContext, MessageHandler, filter
 
 from shivu import application, SUPPORT_CHAT, UPDATE_CHAT, shivuu, LOGGER
 from shivu.modules import ALL_MODULES
-from shivu.rarity import RARITY_WEIGHTS, format_rarity_html
+from shivu.rarity import RARITY_WEIGHTS, format_rarity_html, format_rarity_emoji_only_html
 from shivu.database import (
     ensure_indexes,
     get_all_characters,
