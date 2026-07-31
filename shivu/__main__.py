@@ -186,10 +186,7 @@ async def guess(update: Update, context: CallbackContext) -> None:
                 update.effective_user.username, update.effective_user.first_name,
                 is_new_catch=True,
             ),
-            record_group_guess(
-                chat_id, update.effective_chat.title,
-                user_id, update.effective_user.username, update.effective_user.first_name,
-            ),
+            record_group_guess(chat_id, update.effective_chat.title),
         )
 
         keyboard = [[InlineKeyboardButton(f"See Harem", switch_inline_query_current_chat=f"collection.{user_id}")]]
