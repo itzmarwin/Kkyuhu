@@ -15,7 +15,6 @@ db = client['Character_catcher']
 collection                    = db['anime_characters_lol']      # all characters in the game
 user_collection                = db['user_collection_lmaoooo']   # per-user owned characters
 user_totals_collection         = db['user_totals_lmaoooo']       # per-group message_frequency setting
-group_user_totals_collection   = db['group_user_totalsssssss']   # per-group per-user guess counts (/ctop)
 top_global_groups_collection   = db['top_global_groups']         # per-group global guess totals (/TopGroups)
 pm_users_collection            = db['total_pm_users']            # users who've /start'd in PM    (was "pm_users")
 sequences_collection           = db['sequences']                 # auto-increment counters         (was inline "db.sequences")
@@ -45,13 +44,6 @@ async def ensure_indexes():
     await user_collection.create_index([('characters.id', ASCENDING)])
     await user_collection.create_index([('character_count', -1)])
     await user_collection.create_index([('id', ASCENDING), ('characters.id', ASCENDING)])
-
-    await _create_index_safely(
-        group_user_totals_collection,
-        [('group_id', ASCENDING), ('user_id', ASCENDING)],
-        unique=True,
-    )
-    await group_user_totals_collection.create_index([('group_id', ASCENDING), ('count', -1)])
 
     await _create_index_safely(
         top_global_groups_collection,
@@ -306,39 +298,17 @@ async def iter_all_user_first_names():
         yield user.get('first_name', 'Unknown')
 
 
-async def record_group_guess(chat_id: int, group_name: str, user_id: int, username, first_name) -> None:
-    """Called once per successful /guess -- bumps this user's per-group
-    guess count and this group's global guess count together."""
-    await asyncio.gather(
-        group_user_totals_collection.update_one(
-            {'group_id': chat_id, 'user_id': user_id},
-            {
-                '$set': {
-                    'user_id': user_id,
-                    'username': username,
-                    'first_name': first_name,
-                },
-                '$inc': {'count': 1},
-            },
-            upsert=True,
-        ),
-        top_global_groups_collection.update_one(
-            {'group_id': chat_id},
-            {
-                '$set': {'group_name': group_name},
-                '$inc': {'count': 1},
-            },
-            upsert=True,
-        ),
-    )
-
-
-async def get_group_ranked_list(chat_id: int) -> list:
-    cursor = group_user_totals_collection.find(
+async def record_group_guess(chat_id: int, group_name: str) -> None:
+    """Called once per successful /guess -- bumps this group's global guess
+    count (used by /TopGroups)."""
+    await top_global_groups_collection.update_one(
         {'group_id': chat_id},
-        {'user_id': 1, 'username': 1, 'first_name': 1, 'count': 1, '_id': 0},
-    ).sort('count', -1)
-    return await cursor.to_list(length=None)
+        {
+            '$set': {'group_name': group_name},
+            '$inc': {'count': 1},
+        },
+        upsert=True,
+    )
 
 
 async def get_users_ranked_by_character_count() -> list:
