@@ -9,7 +9,10 @@ ADMINS = [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]
 
 @shivuu.on_message(filters.command("changetime"))
 async def change_time(client: Client, message: Message):
-    
+
+    if message.chat.type == ChatType.PRIVATE:
+        return
+
     if not message.from_user:
         await message.reply_text("Please use this command as a normal admin, not anonymous.")
         return
