@@ -1,7 +1,5 @@
 import os
 import tempfile
-import time
-import asyncio
 import random
 import html
 
@@ -11,7 +9,6 @@ from telegram.ext import CommandHandler, CallbackContext
 from shivu import application, PHOTO_URL, OWNER_ID
 from shivu import sudo_users as SUDO_USERS
 from shivu.database import (
-    get_group_ranked_list,
     get_user_count,
     get_group_count,
     iter_all_user_first_names,
@@ -20,40 +17,13 @@ from shivu.database import (
 from shivu.cache import (
     global_users_cache,
     global_groups_cache,
-    group_leaderboard_cache,
-    group_leaderboard_locks,
 )
-
-GROUP_CACHE_TTL = 600
 
 GROUPS_ONLY_TEXT = 'This command only works in groups.'
 
 
 def format_count(count: int) -> str:
     return f'{count:,}'
-
-
-async def get_group_leaderboard(chat_id: int):
-    entry = group_leaderboard_cache.get(chat_id)
-    now = time.time()
-
-    if entry and now - entry['refreshed_at'] < GROUP_CACHE_TTL:
-        return entry
-
-    if chat_id not in group_leaderboard_locks:
-        group_leaderboard_locks[chat_id] = asyncio.Lock()
-    lock = group_leaderboard_locks[chat_id]
-
-    async with lock:
-        entry = group_leaderboard_cache.get(chat_id)
-        now = time.time()
-        if entry and now - entry['refreshed_at'] < GROUP_CACHE_TTL:
-            return entry
-
-        ranked_list = await get_group_ranked_list(chat_id)
-        entry = {'ranked_list': ranked_list, 'refreshed_at': now}
-        group_leaderboard_cache[chat_id] = entry
-        return entry
 
 
 def find_user_rank(ranked_list, user_id):
@@ -82,38 +52,6 @@ def build_top_users_block(ranked_list, count_field):
         lines.append(f'#{i} {name_link} • <b>{count}</b>')
 
     return '\n'.join(lines)
-
-
-async def ctop(update: Update, context: CallbackContext) -> None:
-    if update.effective_chat.type == 'private':
-        await update.message.reply_text(GROUPS_ONLY_TEXT)
-        return
-
-    chat_id = update.effective_chat.id
-    user_id = update.effective_user.id
-
-    entry = await get_group_leaderboard(chat_id)
-    ranked_list = entry['ranked_list']
-
-    group_name = html.escape(update.effective_chat.title or 'This Group')
-
-    leaderboard_message = f'<b>⌬ {group_name} • Top Collectors</b>\n\n'
-    leaderboard_message += build_top_users_block(ranked_list, 'count')
-
-    rank, entry = find_user_rank(ranked_list, user_id)
-    if not rank or rank > 10:
-        leaderboard_message += '\n\n<b>Your Rank</b>\n'
-        if rank:
-            name_link = build_name_link(entry.get('username', ''), entry.get('first_name', 'Unknown'))
-            leaderboard_message += f'#{rank} {name_link} • {format_count(entry.get("count", 0))}'
-        else:
-            leaderboard_message += 'Not Ranked Yet'
-
-    photo_url = random.choice(PHOTO_URL) if PHOTO_URL else None
-    if photo_url:
-        await update.message.reply_photo(photo=photo_url, caption=leaderboard_message, parse_mode='HTML')
-    else:
-        await update.message.reply_text(leaderboard_message, parse_mode='HTML')
 
 
 async def topusers(update: Update, context: CallbackContext) -> None:
@@ -228,7 +166,6 @@ async def send_groups_document(update: Update, context: CallbackContext) -> None
         with open(filename, 'rb') as f:
             await context.bot.send_document(chat_id=update.effective_chat.id, document=f)
 
-application.add_handler(CommandHandler(['ctop', 'gtop', 'chattop', 'grouptop'], ctop, block=False))
 application.add_handler(CommandHandler('stats', stats, block=False))
 application.add_handler(CommandHandler('TopGroups', global_leaderboard, block=False))
 
