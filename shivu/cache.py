@@ -13,10 +13,9 @@ warned_users = {}
 
 global_users_cache = {}
 global_groups_cache = {}
-group_leaderboard_cache = {}
-group_leaderboard_locks = {}
 
 started_users_cache = set()
+bot_groups_cache = set()
 harem_mode_cache = {}
 
 profile_cooldowns = {}
