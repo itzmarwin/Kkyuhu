@@ -16,6 +16,7 @@ collection                    = db['anime_characters_lol']      # all characters
 user_collection                = db['user_collection_lmaoooo']   # per-user owned characters
 user_totals_collection         = db['user_totals_lmaoooo']       # per-group message_frequency setting
 top_global_groups_collection   = db['top_global_groups']         # per-group global guess totals (/TopGroups)
+bot_groups_collection          = db['bot_groups']                 # groups the bot is CURRENTLY a member of (/stats)
 pm_users_collection            = db['total_pm_users']            # users who've /start'd in PM    (was "pm_users")
 sequences_collection           = db['sequences']                 # auto-increment counters         (was inline "db.sequences")
 
@@ -290,7 +291,7 @@ async def get_top_collectors(character_id: int, limit: int = 5) -> list:
 
 
 async def get_user_count() -> int:
-    return await user_collection.estimated_document_count()
+    return await pm_users_collection.estimated_document_count()
 
 
 async def iter_all_user_first_names():
@@ -330,7 +331,33 @@ async def get_groups_ranked_by_count() -> list:
 
 
 async def get_group_count() -> int:
-    return await top_global_groups_collection.estimated_document_count()
+    return await bot_groups_collection.estimated_document_count()
+
+
+async def add_bot_group(group_id: int) -> None:
+    """Called from the my_chat_member handler in __main__.py when the bot
+    is added to (or promoted/demoted within) a group. upsert so a
+    duplicate Telegram update is a harmless no-op rather than a crash."""
+    await bot_groups_collection.update_one(
+        {'_id': group_id},
+        {'$set': {'_id': group_id}},
+        upsert=True,
+    )
+
+
+async def remove_bot_group(group_id: int) -> None:
+    """Called from the my_chat_member handler in __main__.py when the bot
+    is removed from (left/kicked) a group. Deletes the row outright --
+    /stats' group count is meant to reflect groups the bot is CURRENTLY
+    in, not lifetime history."""
+    await bot_groups_collection.delete_one({'_id': group_id})
+
+
+async def iter_all_bot_group_ids():
+    """Every group_id currently in bot_groups_collection -- used at
+    startup to fill bot_groups_cache in memory."""
+    async for group in bot_groups_collection.find({}, {'_id': 1}):
+        yield group['_id']
 
 
 async def iter_all_group_names():
