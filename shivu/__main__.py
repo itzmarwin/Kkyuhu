@@ -7,7 +7,7 @@ from html import escape
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram import Update
-from telegram.ext import CommandHandler, CallbackContext, MessageHandler, filters
+from telegram.ext import CommandHandler, CallbackContext, ChatMemberHandler, MessageHandler, filters
 
 from shivu import application, SUPPORT_CHAT, UPDATE_CHAT, shivuu, LOGGER
 from shivu.modules import ALL_MODULES
@@ -16,11 +16,14 @@ from shivu.database import (
     ensure_indexes,
     get_all_characters,
     iter_all_pm_user_ids,
+    iter_all_bot_group_ids,
     get_users_ranked_by_character_count,
     get_groups_ranked_by_count,
     grant_character_to_user,
     remove_character_from_user,
     record_group_guess,
+    add_bot_group,
+    remove_bot_group,
     get_user,
     set_favorite_character,
     get_group_message_frequency,
@@ -39,6 +42,7 @@ from shivu.cache import (
     global_users_cache,
     global_groups_cache,
     started_users_cache,
+    bot_groups_cache,
 )
 
 
@@ -61,6 +65,14 @@ async def load_started_users_into_memory():
         started_users_cache.add(user_id)
 
     LOGGER.info(f"Loaded {len(started_users_cache)} started users into memory!")
+
+async def load_bot_groups_into_memory():
+    LOGGER.info("Loading bot groups into memory...")
+    bot_groups_cache.clear()
+    async for group_id in iter_all_bot_group_ids():
+        bot_groups_cache.add(group_id)
+
+    LOGGER.info(f"Loaded {len(bot_groups_cache)} bot groups into memory!")
 
 async def refresh_global_leaderboards():
     users_ranked_list = await get_users_ranked_by_character_count()
@@ -229,9 +241,29 @@ async def fav(update: Update, context: CallbackContext) -> None:
     await set_favorite_character(user_id, character_id)
     await update.message.reply_text(f'Character added to your favorite...')
 
+async def track_bot_group_membership(update: Update, context: CallbackContext) -> None:
+    """Fires whenever the bot's own membership status changes in a chat --
+    added, kicked, promoted, demoted, or left. Keeps bot_groups_collection
+    (and its in-memory mirror) in sync so /stats' group count reflects
+    groups the bot is CURRENTLY in."""
+    my_chat_member = update.my_chat_member
+    if my_chat_member is None:
+        return
+
+    chat_id = my_chat_member.chat.id
+    new_status = my_chat_member.new_chat_member.status
+
+    if new_status in ('left', 'kicked'):
+        await remove_bot_group(chat_id)
+        bot_groups_cache.discard(chat_id)
+    else:
+        await add_bot_group(chat_id)
+        bot_groups_cache.add(chat_id)
+
 async def post_init(app) -> None:
     await load_characters_into_memory()
     await load_started_users_into_memory()
+    await load_bot_groups_into_memory()
     await ensure_indexes()
     await refresh_global_leaderboards()
 
@@ -245,8 +277,9 @@ def main() -> None:
     application.add_handler(CommandHandler(["guess", "protecc", "collect", "grab", "hunt"], guess, block=False))
     application.add_handler(CommandHandler("fav", fav, block=False))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_counter, block=False))
+    application.add_handler(ChatMemberHandler(track_bot_group_membership, ChatMemberHandler.MY_CHAT_MEMBER))
 
-    application.run_polling(drop_pending_updates=True)
+    application.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
     
 if __name__ == "__main__":
     shivuu.start()
