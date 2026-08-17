@@ -12,6 +12,7 @@ from shivu import application, BOT_USERNAME
 from shivu.database import get_user, get_anime_totals
 from shivu.cache import characters_by_id, started_users_cache, harem_mode_cache
 from shivu.rarity import format_rarity_emoji_only_html, RARITY_MAP, get_rarity_name, is_valid_rarity
+from shivu.events import format_event_tag
 
 PAGE_SIZE = 15
 RARITY_ORDER = [1, 2, 3, 4, 5, 6]
@@ -34,7 +35,7 @@ async def _load_owned_characters(user):
             'anime': info['anime'],
             'rarity': info.get('rarity'),
             'img_url': info.get('img_url'),
-            'tag': info.get('tag'),
+            'event': info.get('event'),
         })
     owned_characters.sort(key=lambda x: (x['anime'], x['id']))
     return owned_characters
@@ -69,10 +70,10 @@ async def _build_full_harem_view(user, user_id, display_name, page):
             anime_total = anime_counts.get(anime, 0)
             harem_message += f'\n✦ {anime} • {owned_anime_counts[anime]}/{anime_total}\n'
         for character in characters:
-            tag_part = f' [{character["tag"]}]' if character.get('tag') else ''
+            event_tag = format_event_tag(character.get('event')) if character.get('event') else ''
             harem_message += (
                 f'╰ {character["id"]:04d} • {format_rarity_emoji_only_html(character["rarity"])} • '
-                f'{character["name"]}{tag_part} ×{character["count"]}\n'
+                f'{character["name"]}{event_tag} ×{character["count"]}\n'
             )
 
     total_count = sum(c['count'] for c in owned_characters)
@@ -128,10 +129,10 @@ async def _build_rarity_filtered_view(owned_characters, user_id, header_name, ra
             anime_total = anime_counts.get(anime, 0)
             message += f'\n✦ {anime} • {owned_anime_counts_for_rarity[anime]}/{anime_total}\n'
         for character in characters:
-            tag_part = f' [{character["tag"]}]' if character.get('tag') else ''
+            event_tag = format_event_tag(character.get('event')) if character.get('event') else ''
             message += (
                 f'╰ {character["id"]:04d} • {format_rarity_emoji_only_html(character["rarity"])} • '
-                f'{character["name"]}{tag_part} ×{character["count"]}\n'
+                f'{character["name"]}{event_tag} ×{character["count"]}\n'
             )
 
     keyboard = []
