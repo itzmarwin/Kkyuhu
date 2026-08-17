@@ -16,6 +16,7 @@ from shivu import application, LOGGER
 from shivu.database import get_anime_totals, get_top_collectors, get_user_with_characters, search_characters
 from shivu.cache import characters_by_id
 from shivu.rarity import format_rarity_plain_html, format_rarity_emoji_only_html, get_rarity_name
+from shivu.events import format_event_tag, format_event_footer
 
 pending_inline_updates = {}
 MAX_PENDING_UPDATES = 1000
@@ -41,22 +42,29 @@ def _build_captions(character, c_id, c_anime, is_collection_search, user=None,
     char_name = escape(character['name'])
     anime_name = escape(c_anime)
 
+    event_code = character.get('event')
+    event_tag = format_event_tag(event_code) if event_code else ''
+    event_footer = format_event_footer(event_code) if event_code else ''
+
     if is_collection_search:
         owner_name = escape(user.get('first_name', str(user['id'])))
         header = f"Look At {owner_name}'s Character!"
         body = (
-            f"#{c_id:04d} • {char_name} ×{user_character_count}\n"
+            f"#{c_id:04d} • {char_name}{event_tag} ×{user_character_count}\n"
             f"{anime_name} ({user_anime_characters}/{anime_total})"
         )
     else:
         header = "Look At This Character!"
-        body = f"#{c_id:04d} • {char_name}\n{anime_name}"
+        body = f"#{c_id:04d} • {char_name}{event_tag}\n{anime_name}"
 
     plain_rarity = _build_rarity_line(character['rarity'], premium=False)
     premium_rarity = _build_rarity_line(character['rarity'], premium=True)
 
-    plain_caption = f"{header}\n\n{body}\n\n{plain_rarity}"
-    premium_caption = f"{header}\n\n{body}\n\n{premium_rarity}"
+    plain_inner = f"{header}\n\n{body}\n\n{plain_rarity}"
+    premium_inner = f"{header}\n\n{body}\n\n{premium_rarity}"
+
+    plain_caption = f"<b>{plain_inner}</b>{event_footer}"
+    premium_caption = f"<b>{premium_inner}</b>{event_footer}"
     return plain_caption, premium_caption
 
 
@@ -96,6 +104,7 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
                 'anime': info['anime'],
                 'rarity': info.get('rarity'),
                 'img_url': info.get('img_url'),
+                'event': info.get('event'),
             })
             char_count_map[entry['id']] = entry['count']
 
