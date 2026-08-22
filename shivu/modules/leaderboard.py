@@ -33,21 +33,21 @@ def find_user_rank(ranked_list, user_id):
     return None, None
 
 
-def build_name_link(username, first_name):
+def build_name_link(user_id, first_name):
     display_name = html.escape(first_name or 'Unknown')
 
     if len(display_name) > 15:
         display_name = display_name[:15] + '...'
 
-    if username:
-        return f'<a href="https://t.me/{username}"><b>{display_name}</b></a>'
+    if user_id:
+        return f'<a href="tg://user?id={user_id}"><b>{display_name}</b></a>'
     return f'<b>{display_name}</b>'
 
 
 def build_top_users_block(ranked_list, count_field):
     lines = []
     for i, user in enumerate(ranked_list[:10], start=1):
-        name_link = build_name_link(user.get('username', ''), user.get('first_name', 'Unknown'))
+        name_link = build_name_link(user.get('user_id'), user.get('first_name', 'Unknown'))
         count = format_count(user.get(count_field, 0))
         lines.append(f'#{i} {name_link} • <b>{count}</b>')
 
@@ -70,7 +70,7 @@ async def topusers(update: Update, context: CallbackContext) -> None:
     if not rank or rank > 10:
         leaderboard_message += '\n\n<b>Your Rank</b>\n'
         if rank:
-            name_link = build_name_link(entry.get('username', ''), entry.get('first_name', 'Unknown'))
+            name_link = build_name_link(entry.get('user_id'), entry.get('first_name', 'Unknown'))
             leaderboard_message += f'#{rank} {name_link} • {format_count(entry.get("character_count", 0))}'
         else:
             leaderboard_message += 'Not Ranked Yet'
