@@ -12,19 +12,16 @@ LOGGER = logging.getLogger(__name__)
 client = AsyncMongoClient(Config.mongo_url)
 db = client['Character_catcher']
 
-collection                    = db['anime_characters_lol']      # all characters in the game
-user_collection                = db['user_collection_lmaoooo']   # per-user owned characters
-user_totals_collection         = db['user_totals_lmaoooo']       # per-group message_frequency setting
-top_global_groups_collection   = db['top_global_groups']         # per-group global guess totals (/TopGroups)
-bot_groups_collection          = db['bot_groups']                 # groups the bot is CURRENTLY a member of (/stats)
-pm_users_collection            = db['total_pm_users']            # users who've /start'd in PM    (was "pm_users")
-sequences_collection           = db['sequences']                 # auto-increment counters         (was inline "db.sequences")
+collection                    = db['anime_characters_lol']
+user_collection                = db['user_collection_lmaoooo']
+user_totals_collection         = db['user_totals_lmaoooo']
+top_global_groups_collection   = db['top_global_groups']
+bot_groups_collection          = db['bot_groups']
+pm_users_collection            = db['total_pm_users']
+sequences_collection           = db['sequences']
 
 
 async def _create_index_safely(coll, keys, **kwargs):
-    """Wraps create_index so that a duplicate-data conflict on a brand-new
-    unique index logs a clear, actionable error instead of crashing the
-    whole bot on startup."""
     try:
         await coll.create_index(keys, **kwargs)
     except PyMongoError as e:
@@ -37,8 +34,6 @@ async def _create_index_safely(coll, keys, **kwargs):
 
 
 async def ensure_indexes():
-    """Called once at startup (see post_init in __main__.py)."""
-
     await collection.create_index([('id', ASCENDING)])
     await collection.create_index([('anime', ASCENDING)])
     await user_collection.create_index([('id', ASCENDING)])
@@ -82,16 +77,10 @@ async def get_character(character_id: int):
 
 
 async def delete_character(character_id: int):
-    """Returns the deleted document, or None if no such character existed."""
     return await collection.find_one_and_delete({'id': character_id})
 
 
 async def cascade_delete_character_from_users(character_id: int) -> int:
-    """Call this right after delete_character(). Removes character_id from
-    every user's owned-characters array and favorites, decrementing
-    character_count by however many copies each user had (not just 1).
-    Returns how many users were affected."""
-
     affected_users = await user_collection.find(
         {'characters.id': character_id},
         {'id': 1, 'characters.$': 1},
@@ -130,7 +119,6 @@ async def search_characters(query_filter: dict, offset: int, limit: int) -> list
 
 
 async def get_anime_totals(anime_names: list) -> dict:
-    """How many characters exist in the catalog for each of these anime."""
     if not anime_names:
         return {}
     cursor = await collection.aggregate([
@@ -161,10 +149,6 @@ async def grant_character_to_user(
     user_id: int, character_id: int, username=None, first_name=None,
     is_new_catch: bool = False,
 ) -> None:
-    """is_new_catch=True should ONLY be passed by the /guess flow (an
-    actual catch). Trades and gifts move an existing character between
-    users and must NOT count towards first_collected_at or catch streaks --
-    they leave is_new_catch as False."""
     inc_fields = {'characters.$.count': 1, 'character_count': 1}
     set_fields = {}
     if username is not None:
@@ -198,11 +182,6 @@ async def grant_character_to_user(
         )
 
     if is_new_catch:
-        # Runs after every branch above. Only ever writes once per user,
-        # the very first time this matches (field absent = never set
-        # before), so "Joined" date can never change afterwards -- covers
-        # both a brand-new user doc and a pre-existing doc from before
-        # this field existed.
         await user_collection.update_one(
             {'id': user_id, 'first_collected_at': {'$exists': False}},
             {'$set': {'first_collected_at': datetime.now(timezone.utc)}},
@@ -210,9 +189,6 @@ async def grant_character_to_user(
 
 
 async def _compute_streak_update(user_id: int) -> dict:
-    """Reads the user's last_catch_date and returns the $set fields needed
-    to advance their catch streak for "today" (UTC calendar date).
-    Returns {} if today was already counted (no-op)."""
     today = datetime.now(timezone.utc).date()
     doc = await user_collection.find_one(
         {'id': user_id}, {'last_catch_date': 1, 'streak_count': 1},
@@ -236,8 +212,6 @@ async def _compute_streak_update(user_id: int) -> dict:
 
 
 def _parse_stored_date(value):
-    """last_catch_date is stored as an ISO 'YYYY-MM-DD' string. Returns a
-    date object, or None if missing/unparseable."""
     if not value:
         return None
     try:
@@ -265,6 +239,7 @@ async def get_top_collectors(character_id: int, limit: int = 5) -> list:
     cursor = await user_collection.aggregate([
         {"$match": {"characters.id": character_id}},
         {"$project": {
+            "id": 1,
             "first_name": 1,
             "matched_count": {
                 "$first": {
@@ -285,7 +260,7 @@ async def get_top_collectors(character_id: int, limit: int = 5) -> list:
     ])
     result_list = await cursor.to_list(length=limit)
     return [
-        {'first_name': doc.get('first_name') or 'Unknown', 'count': doc.get('matched_count', 0)}
+        {'user_id': doc.get('id'), 'first_name': doc.get('first_name') or 'Unknown', 'count': doc.get('matched_count', 0)}
         for doc in result_list
     ]
 
@@ -300,8 +275,6 @@ async def iter_all_user_first_names():
 
 
 async def record_group_guess(chat_id: int, group_name: str) -> None:
-    """Called once per successful /guess -- bumps this group's global guess
-    count (used by /TopGroups)."""
     await top_global_groups_collection.update_one(
         {'group_id': chat_id},
         {
@@ -335,9 +308,6 @@ async def get_group_count() -> int:
 
 
 async def add_bot_group(group_id: int) -> None:
-    """Called from the my_chat_member handler in __main__.py when the bot
-    is added to (or promoted/demoted within) a group. upsert so a
-    duplicate Telegram update is a harmless no-op rather than a crash."""
     await bot_groups_collection.update_one(
         {'_id': group_id},
         {'$set': {'_id': group_id}},
@@ -346,16 +316,10 @@ async def add_bot_group(group_id: int) -> None:
 
 
 async def remove_bot_group(group_id: int) -> None:
-    """Called from the my_chat_member handler in __main__.py when the bot
-    is removed from (left/kicked) a group. Deletes the row outright --
-    /stats' group count is meant to reflect groups the bot is CURRENTLY
-    in, not lifetime history."""
     await bot_groups_collection.delete_one({'_id': group_id})
 
 
 async def iter_all_bot_group_ids():
-    """Every group_id currently in bot_groups_collection -- used at
-    startup to fill bot_groups_cache in memory."""
     async for group in bot_groups_collection.find({}, {'_id': 1}):
         yield group['_id']
 
@@ -366,7 +330,6 @@ async def iter_all_group_names():
 
 
 async def iter_all_group_ids():
-    """Every group_id the bot has ever seen a guess in -- used for /broadcast."""
     async for group in top_global_groups_collection.find({}, {'group_id': 1, '_id': 0}):
         yield group['group_id']
 
@@ -405,9 +368,6 @@ async def set_group_message_frequency(chat_id: str, frequency: int):
 
 
 async def unlock_new_achievements(user_id: int, achievement_ids: list) -> None:
-    """Persists newly-unlocked achievement IDs. Uses $addToSet (not
-    $push), so calling this again with IDs the user already has is a
-    harmless no-op -- achievements are permanent and never removed."""
     if not achievement_ids:
         return
     await user_collection.update_one(
