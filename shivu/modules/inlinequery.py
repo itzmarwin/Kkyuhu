@@ -245,7 +245,8 @@ async def on_top_collectors_click(update: Update, context: CallbackContext) -> N
 
     if collectors:
         lines = "\n".join(
-            f"#{i} {escape(c['first_name'])} ×{c['count']}"
+            f"#{i} <a href=\"tg://user?id={c['user_id']}\">{escape(c['first_name'])}</a> ×{c['count']}"
+            if c.get('user_id') else f"#{i} {escape(c['first_name'])} ×{c['count']}"
             for i, c in enumerate(collectors, start=1)
         )
         addition = f"\n\n⌬ Top Collectors\n\n{lines}"
