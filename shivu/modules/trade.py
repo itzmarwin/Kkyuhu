@@ -23,6 +23,7 @@ async def trade(client, message):
         return
 
     receiver_id = message.reply_to_message.from_user.id
+    receiver_first_name = message.reply_to_message.from_user.first_name
 
     if sender_id == receiver_id:
         await message.reply_text("You can't trade a character with yourself!")
@@ -62,7 +63,7 @@ async def trade(client, message):
         ]
     )
 
-    await message.reply_text(f"{message.reply_to_message.from_user.mention}, do you accept this trade?", reply_markup=keyboard)
+    await message.reply_text(f"[{receiver_first_name}](tg://user?id={receiver_id}), do you accept this trade?", reply_markup=keyboard)
 
 
 @shivuu.on_callback_query(filters.create(lambda _, __, query: query.data.startswith("confirm_trade:") or query.data.startswith("cancel_trade:")))
@@ -108,7 +109,7 @@ async def on_trade_callback(client, callback_query):
 
         del pending_trades[trade_id]
         
-        await callback_query.message.edit_text(f"✅ Trade successful! {callback_query.from_user.mention} and the other user have exchanged characters.")
+        await callback_query.message.edit_text(f"✅ Trade successful! [{callback_query.from_user.first_name}](tg://user?id={callback_query.from_user.id}) and the other user have exchanged characters.")
 
     else:
         del pending_trades[trade_id]
@@ -168,7 +169,7 @@ async def gift(client, message):
         ]
     )
 
-    await message.reply_text(f"Do You Really Want To Gift {message.reply_to_message.from_user.mention} ?", reply_markup=keyboard)
+    await message.reply_text(f"Do You Really Want To Gift [{receiver_first_name}](tg://user?id={receiver_id}) ?", reply_markup=keyboard)
 
 
 @shivuu.on_callback_query(filters.create(lambda _, __, query: query.data.startswith("confirm_gift:") or query.data.startswith("cancel_gift:")))
